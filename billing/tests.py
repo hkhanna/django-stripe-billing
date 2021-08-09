@@ -664,7 +664,7 @@ class SubscriptionAPITest(APITestCase):
         response = self.client.post(url, payload)
         self.assertEqual(201, response.status_code)
         args[0].PaymentMethod.attach.assert_called_once()
-        args[0].Customer.modify.assert_called_once()
+        args[0].Subscription.modify.assert_called_once()
         args[0].Invoice.list.assert_called_once()
         args[0].Invoice.pay.assert_called_once()
         self.user.refresh_from_db()
@@ -849,7 +849,7 @@ class SubscriptionAPITest(APITestCase):
         response = self.client.post(url, payload)
         self.assertEqual(201, response.status_code)
         args[0].PaymentMethod.attach.assert_called_once()
-        args[0].Customer.modify.assert_called_once()
+        args[0].Subscription.modify.assert_called_once()
         self.user.refresh_from_db()
         self.assertEqual(
             models.Customer.PaymentState.OK, self.user.customer.payment_state

@@ -90,7 +90,9 @@ class CureFailedCardAPIView(APIView):
         ):
             try:
                 payment_method = utils.stripe_replace_card(
-                    customer.customer_id, request.data["payment_method_id"]
+                    customer.customer_id,
+                    customer.subscription_id,
+                    request.data["payment_method_id"],
                 )
                 cc_info = payment_method.card
                 customer.cc_info = {
@@ -158,7 +160,9 @@ class ReplaceCardAPIView(APIView):
         ):
             try:
                 payment_method = utils.stripe_replace_card(
-                    customer.customer_id, request.data["payment_method_id"]
+                    customer.customer_id,
+                    customer.subscription_id,
+                    request.data["payment_method_id"],
                 )
             except stripe.error.CardError as e:
                 raise ValidationError(e.error.message)

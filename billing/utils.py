@@ -83,19 +83,17 @@ def stripe_create_subscription(customer_id, payment_method_id, price_id):
     payment_method = stripe.PaymentMethod.attach(
         payment_method_id, customer=customer_id
     )
-    stripe.Customer.modify(
-        customer_id, invoice_settings={"default_payment_method": payment_method_id}
-    )
     subscription = stripe.Subscription.create(
         customer=customer_id,
         items=[{"price": price_id}],
         expand=["latest_invoice.payment_intent"],
+        default_payment_method=payment_method_id,
     )
 
     return subscription, payment_method
 
 
-def stripe_replace_card(customer_id, payment_method_id):
+def stripe_replace_card(customer_id, subscription_id, payment_method_id):
     if settings.STRIPE_API_KEY == "mock":
         from . import factories
 
@@ -104,8 +102,8 @@ def stripe_replace_card(customer_id, payment_method_id):
     payment_method = stripe.PaymentMethod.attach(
         payment_method_id, customer=customer_id
     )
-    stripe.Customer.modify(
-        customer_id, invoice_settings={"default_payment_method": payment_method_id}
+    stripe.Subscription.modify(
+        subscription_id, default_payment_method=payment_method_id
     )
     return payment_method
 
