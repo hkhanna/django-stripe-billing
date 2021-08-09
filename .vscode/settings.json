@@ -1,0 +1,8 @@
+{
+    "python.defaultInterpreterPath": "/home/harry/venvs/billing/bin/python3",
+    "python.formatting.provider": "black",
+    "python.testing.pytestEnabled": true,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.unittestEnabled": false,
+    "editor.formatOnSave": true
+}
