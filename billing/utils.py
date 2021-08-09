@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework.exceptions import APIException
 
 stripe.api_key = settings.STRIPE_API_KEY
+user_pk_key = settings.BILLING_APPLICATION_NAME + "_user_pk"
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def stripe_get_customer(user):
             logger.error(f"User.email={user.email} more than 1 Stripe Customer found")
 
         for customer in customers.data:
-            if str(customer.metadata.user_pk) == str(user.pk):
+            if str(customer.metadata[user_pk_key]) == str(user.pk):
                 return customer
 
         logger.error(
@@ -47,7 +48,7 @@ def stripe_create_customer(user):
         customer = stripe.Customer.create(
             name=user.name,
             email=user.email,
-            metadata={"user_pk": user.pk},
+            metadata={user_pk_key: user.pk},
         )
         return customer
 

@@ -571,7 +571,10 @@ class SubscriptionAPITest(APITestCase):
         cc_info = factories.cc_info()
         args[0].Customer.list.return_value.data = [
             mock.MagicMock(
-                **{"id": factories.id("cus"), "metadata.user_pk": str(self.user.pk)}
+                **{
+                    "id": factories.id("cus"),
+                    "metadata": {"example_user_pk": str(self.user.pk)},
+                }
             )
         ]
         args[0].Subscription.create.return_value.id = "sub_paid"

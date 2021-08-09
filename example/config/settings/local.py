@@ -208,8 +208,9 @@ logging.config.dictConfig(
     }
 )
 
-# Stripe
+# Billing
 STRIPE_API_KEY = env("STRIPE_API_KEY", default="mock")
+BILLING_APPLICATION_NAME = "example"
 
 # Celery - Will only be used if you pip install celery
 # https://docs.celeryproject.org/en/stable/getting-started/brokers/redis.html

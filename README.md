@@ -26,6 +26,7 @@ git+https://github.com/hkhanna/billing.git
 ```
 
 1. Add your `STRIPE_API_KEY` to your Django settings. You can set this to a value of "mock" for local development and it will not touch Stripe's services.
+1. Set `BILLING_APPLICATION_NAME` to a unique name for that particular Stripe account. This will allow you to store metadata on customers segregated by application but all in the same Stripe account.
 1. Run `python manage.py migrate` to create the billing models.
 1. Run `python manage.py billing_init`, which will create Customer objects for existing Users. If you don't do this, you may run into errors.
 1. Add this to your user admin file:
