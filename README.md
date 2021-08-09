@@ -7,7 +7,7 @@
 1. Add "billing" to your `requirements.txt`
 
 ```
-git+ssh://github.com/hkhanna/billing.git
+git+https://github.com/hkhanna/billing.git
 ```
 
 1. Add "billing" to your INSTALLED_APPS setting like this:
@@ -27,7 +27,6 @@ git+ssh://github.com/hkhanna/billing.git
 
 1. Add your `STRIPE_API_KEY` to your Django settings. You can set this to a value of "mock" for local development and it will not touch Stripe's services.
 1. Run `python manage.py migrate` to create the billing models.
-1. Start the development server and visit http://127.0.0.1:8000/admin/ to create billing plans (you'll need the Admin app enabled).
 1. Run `python manage.py billing_init`, which will create Customer objects for existing Users. If you don't do this, you may run into errors.
 1. Add this to your user admin file:
 
@@ -59,11 +58,16 @@ class UserAdmin(DefaultUserAdmin):
 
 ## Deployment to Heroku
 
-1. Allow Heroku to access private git repos: TK (https://stackoverflow.com/questions/15753641/how-do-i-access-a-private-github-repo-from-heroku/40064792)
 1. Add `STRIPE_API_KEY` to the environment variables.
 1. In your Stripe dashboard, you _must_ configure it to cancel a customer's subscription if all retries for a payment fail.
 1. In your Stripe dashboard, set up a product (with an optional statement descriptor), and set up a price for that product.
 1. In the admin, create billing plans.
+1. In the Stripe dashboard (live environment), the following webhooks should be set to point to `https://production.url/billing/stripe/webhook/`:
+
+- `invoice.paid`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `payment_method.automatically_updated`
 
 ## Usage
 
@@ -83,6 +87,10 @@ class UserAdmin(DefaultUserAdmin):
 - `/billing/reactivate-subscription/`
 - `/billing/replace-card/`
 - `/billing/stripe/webhook/`
+
+### Conveniences
+
+This package includes factories and serializers for use. Documentation to come!
 
 ### Usage Notes
 
