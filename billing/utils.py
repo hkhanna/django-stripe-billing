@@ -24,17 +24,22 @@ def stripe_get_customer(user):
         if len(customers.data) > 1:
             logger.error(f"User.email={user.email} more than 1 Stripe Customer found")
 
+        candidate = None
         for customer in customers.data:
-            if str(customer.metadata[user_pk_key]) == str(user.pk):
+            pk = getattr(customer.metadata, user_pk_key, None)
+            if pk is None:
+                candidate = customer
+            elif str(pk) == str(user.pk):
                 return customer
+            else:
+                logger.error(
+                    f"User.email={user.email} found Stripe customer but user_id does not match."
+                )
 
-        logger.error(
-            f"User.email={user.email} found Stripe customer but user_id does not match."
-        )
     except Exception as e:
         logger.exception(f"User.email={user.email} Error listing Stripe customers")
 
-    return None
+    return candidate
 
 
 def stripe_create_customer(user):

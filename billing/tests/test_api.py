@@ -28,7 +28,8 @@ User = get_user_model()
 # settings endpoint), so there should also be at least one test in whatever app contains the User model ensuring
 # that Customer information comes through where its needed.
 #
-
+# 3. Limits (see test_limits.py)
+#
 # 4. Users interacting with subscriptions for the first time.
 # Like upgrading to a paid plan or canceling the paid plan.
 #

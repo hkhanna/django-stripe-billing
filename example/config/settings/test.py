@@ -1,6 +1,7 @@
 import os
 
-os.environ["LOGLEVEL"] = "CRITICAL"  # Prevent log spew
+# This isn't needed for now, and it's interfering with pytest logging assertions ("caplog").
+# os.environ["LOGLEVEL"] = "CRITICAL"  # Prevent log spew
 
 from .local import *
 
