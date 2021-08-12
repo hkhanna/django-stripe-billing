@@ -1,16 +1,16 @@
+"""Tests for the API"""
 import json
-from datetime import timedelta, datetime as dt
-from unittest import mock, skip
+from datetime import timedelta
+from unittest import mock
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.utils import timezone
-from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.reverse import reverse
 from rest_framework.test import APITestCase
 
-from . import models, factories, serializers
+from .. import models, factories, serializers
 
 User = get_user_model()
 
@@ -28,11 +28,7 @@ User = get_user_model()
 # settings endpoint), so there should also be at least one test in whatever app contains the User model ensuring
 # that Customer information comes through where its needed.
 #
-# 3. The limitations of various billing plans.
-# In this billing app, we can test generically that Limits are resolved properly based on the active plan.
-# It may be sensible to do additional testing in other apps for specific, real Limits, e.g., the maximum
-# number of emails a user can send.
-#
+
 # 4. Users interacting with subscriptions for the first time.
 # Like upgrading to a paid plan or canceling the paid plan.
 #
@@ -366,116 +362,6 @@ class CustomerAPITest(APITestCase):
         )
 
 
-class LimitTest(APITestCase):
-    """This contains tests from type 3 above."""
-
-    def setUp(self):
-        self.user = factories.UserFactory(paying=True)
-        self.client.force_login(self.user)
-        factories.PlanLimitFactory(
-            plan=self.user.customer.plan,
-            value=1,
-            limit__name="Limit 1",
-            limit__default=99,
-        )
-        factories.PlanLimitFactory(
-            plan=self.user.customer.plan,
-            value=2,
-            limit__name="Limit 2",
-            limit__default=98,
-        )
-        factories.LimitFactory(name="Limit 3", default=97)
-
-    def test_get_limit(self, *args):
-        """Customer.get_limit returns the PlanLimit value."""
-        value = self.user.customer.get_limit("Limit 1")
-        self.assertEqual(value, 1)
-        value = self.user.customer.get_limit("Limit 2")
-        self.assertEqual(value, 2)
-
-    def test_get_limit_default(self, *args):
-        """Customer.get_limit returns the Limit default if the Plan does not have have that PlanLimit."""
-        value = self.user.customer.get_limit("Limit 3")
-        self.assertEqual(value, 97)
-
-    def test_get_limit_nonexist(self, *args):
-        """Attempting to get a non-existent limit will raise."""
-        with self.assertRaises(ObjectDoesNotExist):
-            self.user.customer.get_limit("Bad Limit")
-
-    def test_get_limit_expired_plan(self, *args):
-        """Getting a limit for an expired paid plan should return the limit from the free_default plan."""
-        # Expire the plan
-        self.user.customer.current_period_end = timezone.now() - timedelta(minutes=1)
-        self.user.customer.save()
-
-        free_default_plan = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
-        factories.PlanLimitFactory(
-            plan=free_default_plan, value=50, limit__name="Limit 1"
-        )  # Will get existing Limit
-        value = self.user.customer.get_limit("Limit 1")
-        self.assertEqual(50, value)
-
-        # Because the free_default plan does not have Limit 2, it should use the default.
-        value = self.user.customer.get_limit("Limit 2")
-        self.assertEqual(98, value)
-
-    def test_get_limit_paid_plan_with_no_date(self, *args):
-        """A paid plan with no current_period_end should be treated as expired."""
-        self.user.customer.current_period_end = None
-        self.user.customer.save()
-        free_default_plan = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
-        factories.PlanLimitFactory(
-            plan=free_default_plan, value=50, limit__name="Limit 1"
-        )  # Will get existing Limit
-        value = self.user.customer.get_limit("Limit 1")
-        self.assertEqual(50, value)
-
-    def test_get_limit_free_private_plan_expired(self, *args):
-        """A free_private plan with an expired current_period_end should return the limits from the free_default plan."""
-        plan = factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
-        self.user = factories.UserFactory(
-            paying=False,
-            customer__plan=plan,
-            customer__current_period_end=timezone.now() - timedelta(days=10),
-        )
-        self.client.force_login(self.user)
-        factories.PlanLimitFactory(
-            plan=plan, value=0, limit__name="Limit 1"
-        )  # Will get existing Limit
-
-        free_default_plan = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
-        factories.PlanLimitFactory(
-            plan=free_default_plan, value=50, limit__name="Limit 1"
-        )  # Will get existing Limit
-        value = self.user.customer.get_limit("Limit 1")
-        self.assertEqual(50, value)
-
-        # Because the free_default plan does not have Limit 2, it should use the default.
-        value = self.user.customer.get_limit("Limit 2")
-        self.assertEqual(98, value)
-
-    def test_get_limit_free_private_plan_with_no_date(self, *args):
-        """A free_private plan with no current_period_end should NOT be treated as expired."""
-        plan = factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
-        self.user = factories.UserFactory(
-            paying=False, customer__plan=plan, customer__current_period_end=None
-        )
-        self.client.force_login(self.user)
-        factories.PlanLimitFactory(
-            plan=plan, value=0, limit__name="Limit 1"
-        )  # Will get existing Limit
-
-        # These defaults won't be used.
-        free_default_plan = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
-        factories.PlanLimitFactory(
-            plan=free_default_plan, value=50, limit__name="Limit 1"
-        )
-
-        value = self.user.customer.get_limit("Limit 1")
-        self.assertEqual(0, value)
-
-
 @patch("billing.utils.stripe")
 class SubscriptionAPITest(APITestCase):
     """This contains tests type 4 from above."""
@@ -563,7 +449,8 @@ class SubscriptionAPITest(APITestCase):
         self.assertEqual("paid.paying", self.user.customer.state)
 
     def test_create_subscription_customer_exists_on_stripe(self, *args):
-        """If a User does not have a customer_id, but the customer is on Stripe, it should use that Customer."""
+        """If a User does not have a customer_id, but the customer is on Stripe
+        with the correct pk, it should use that Customer."""
         self.user = factories.UserFactory()
         self.client.force_login(self.user)
 
@@ -573,7 +460,7 @@ class SubscriptionAPITest(APITestCase):
             mock.MagicMock(
                 **{
                     "id": factories.id("cus"),
-                    "metadata": {"example_user_pk": str(self.user.pk)},
+                    "metadata.example_user_pk": str(self.user.pk),
                 }
             )
         ]
