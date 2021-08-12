@@ -42,7 +42,7 @@ User = get_user_model()
 # is declined on renewal, it looks very much like a credit card being declined initially.
 
 
-@patch("billing.utils.stripe")
+@patch("billing.services.stripe")
 class CustomerAPITest(APITestCase):
     """Tests related to automatic Customer creation and model constraints. These are tests of type 1 and 2."""
 
@@ -363,7 +363,7 @@ class CustomerAPITest(APITestCase):
         )
 
 
-@patch("billing.utils.stripe")
+@patch("billing.services.stripe")
 class SubscriptionAPITest(APITestCase):
     """This contains tests type 4 from above."""
 
@@ -748,7 +748,7 @@ class SubscriptionAPITest(APITestCase):
         self.assertJSONEqual(json.dumps(self.user.customer.cc_info), new_cc_info)
 
 
-@patch("billing.utils.stripe")
+@patch("billing.services.stripe")
 class StripeWebhookAPITest(APITestCase):
     """Stripe webhook functionality (tests type 5 from above)."""
 

@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 import stripe
 
-from . import serializers, models, utils, tasks
+from . import serializers, models, services, tasks
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -28,16 +28,16 @@ class CreateSubscriptionAPIView(APIView):
         # If the customer doesn't have a stripe customer_id, check if there's a matching customer on Stripe.
         # If not, create a Stripe customer now.
         if not customer.customer_id:
-            existing = utils.stripe_get_customer(request.user)
+            existing = services.stripe_get_customer(request.user)
             if existing:
                 customer.customer_id = existing.id
             else:
-                stripe_customer = utils.stripe_create_customer(request.user)
+                stripe_customer = services.stripe_create_customer(request.user)
                 customer.customer_id = stripe_customer.id
             customer.save()
 
         try:
-            subscription, payment_method = utils.stripe_create_subscription(
+            subscription, payment_method = services.stripe_create_subscription(
                 customer_id=customer.customer_id,
                 payment_method_id=serializer.validated_data["payment_method_id"],
                 price_id=serializer.plan.price_id,
@@ -89,7 +89,7 @@ class CureFailedCardAPIView(APIView):
             == models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
         ):
             try:
-                payment_method = utils.stripe_replace_card(
+                payment_method = services.stripe_replace_card(
                     customer.customer_id,
                     customer.subscription_id,
                     request.data["payment_method_id"],
@@ -101,7 +101,7 @@ class CureFailedCardAPIView(APIView):
                     if k in ("brand", "last4", "exp_month", "exp_year")
                 }
                 customer.save()
-                invoice = utils.stripe_retry_latest_invoice(customer.customer_id)
+                invoice = services.stripe_retry_latest_invoice(customer.customer_id)
                 if invoice["status"] == "paid":
                     customer.current_period_end = dt.fromtimestamp(
                         invoice["lines"]["data"][0]["period"]["end"], tz=timezone.utc
@@ -124,7 +124,7 @@ class CancelSubscriptionAPIView(APIView):
         if request.user.customer.payment_state == models.Customer.PaymentState.OFF:
             raise ValidationError("No active subscription to cancel.")
 
-        utils.stripe_cancel_subscription(request.user.customer.subscription_id)
+        services.stripe_cancel_subscription(request.user.customer.subscription_id)
         request.user.customer.payment_state = models.Customer.PaymentState.OFF
         request.user.customer.save()
         return Response(status=201)
@@ -137,7 +137,7 @@ class ReactivateSubscriptionAPIView(APIView):
         customer = request.user.customer
         # Make sure there is an active subscription that will be canceled at the end of the period
         if customer.state == "paid.will_cancel":
-            utils.stripe_reactivate_subscription(customer.subscription_id)
+            services.stripe_reactivate_subscription(customer.subscription_id)
             request.user.customer.payment_state = models.Customer.PaymentState.OK
             request.user.customer.save()
             return Response(status=201)
@@ -159,7 +159,7 @@ class ReplaceCardAPIView(APIView):
             and customer.payment_state != models.Customer.PaymentState.OFF
         ):
             try:
-                payment_method = utils.stripe_replace_card(
+                payment_method = services.stripe_replace_card(
                     customer.customer_id,
                     customer.subscription_id,
                     request.data["payment_method_id"],

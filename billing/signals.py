@@ -3,7 +3,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models.signals import pre_save, post_save, pre_delete
 
-from . import models, utils
+from . import models, services
 
 
 @receiver(pre_save, sender=settings.AUTH_USER_MODEL)
@@ -18,7 +18,7 @@ def user_pre_save_signal(sender, instance, **kwargs):
             or orig.email != instance.email
         ):
             name = f"{instance.first_name} {instance.last_name}"
-            utils.stripe_modify_customer(instance, name=name, email=instance.email)
+            services.stripe_modify_customer(instance, name=name, email=instance.email)
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
@@ -38,7 +38,7 @@ def user_post_save_signal(sender, instance, **kwargs):
         and instance.customer.payment_state == models.Customer.PaymentState.OK
     ):
         # Cancel Stripe subscription if the user is being soft deleted.
-        utils.stripe_cancel_subscription(instance.customer.subscription_id)
+        services.stripe_cancel_subscription(instance.customer.subscription_id)
         instance.customer.payment_state = models.Customer.PaymentState.OFF
     instance.customer.save()
 
@@ -51,4 +51,4 @@ def user_hard_delete_signal(sender, instance, **kwargs):
         and instance.customer.payment_state == models.Customer.PaymentState.OK
     ):
         # Cancel the Stripe subscription if the user is being hard deleted
-        utils.stripe_cancel_subscription(instance.customer.subscription_id)
+        services.stripe_cancel_subscription(instance.customer.subscription_id)

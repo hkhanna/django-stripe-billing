@@ -3,13 +3,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 import pytest
 import stripe
-from .. import factories, utils
+from .. import factories, services
 
 
 class MockStripeCustomer:
     def __init__(self, user, good_key, good_value):
         self.email = user.email
-        self.user_pk_key = utils.user_pk_key
+        self.user_pk_key = services.user_pk_key
         self.user_pk_value = user.pk
         if not good_key:
             self.user_pk_key = "bad_user_pk"
@@ -71,7 +71,7 @@ def test_get_customer(
         )
 
     mock_stripe_customer_list.return_value.data = customer_list
-    stripe_customer = utils.stripe_get_customer(user)
+    stripe_customer = services.stripe_get_customer(user)
     if expected_type is None:
         assert stripe_customer is None
     else:
