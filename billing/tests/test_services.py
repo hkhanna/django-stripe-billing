@@ -1,13 +1,16 @@
 """Tests related to individual services"""
 from types import SimpleNamespace
-from unittest.mock import Mock
+from django.urls import reverse
+import py
 import pytest
-import stripe
 from .. import factories, services
 
 
 class MockStripeCustomer:
+    """A mock of the Customer object returned by Stripe."""
+
     def __init__(self, user, good_key, good_value):
+        self.id = user.customer.id
         self.email = user.email
         self.user_pk_key = services.user_pk_key
         self.user_pk_value = user.pk
@@ -21,13 +24,12 @@ class MockStripeCustomer:
 
 @pytest.fixture
 def user():
-    return factories.UserFactory(pk=1000)
+    return factories.UserFactory()
 
 
 @pytest.fixture
-def mock_stripe_customer_list(monkeypatch):
-    mock_stripe_customer = Mock()
-    monkeypatch.setattr(stripe, "Customer", mock_stripe_customer)
+def mock_stripe_customer_list(mock_stripe_customer):
+    mock_stripe_customer.list.return_value.data = []
     return mock_stripe_customer.list
 
 
@@ -77,3 +79,27 @@ def test_get_customer(
     else:
         assert type(stripe_customer) == expected_type
     assert len(caplog.records) == expected_errors
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "good_key,good_value,should_update",
+    [(True, True, False), (False, False, True), (True, False, False)],
+    ids=[
+        "Everything matches, don't update",
+        "No match, update",
+        "Invalid match, don't update",
+    ],
+)
+def test_update_stripe_customer_metadata(
+    user, mock_stripe_customer, good_key, good_value, should_update
+):
+    """When a Subscription is created, a User is associated with a Stripe Customer.
+    It's possible for that Stripe Customer to not have the user_pk in its metadata
+    because the User's email was found on a Stripe Customer that did not have the metadata.
+    Normally, the metadata is added at the Stripe Customer upon creation but since we
+    do not create it in that instance, we need to add it manually."""
+    customer = MockStripeCustomer(user, good_key, good_value)
+    updated = services.check_update_stripe_customer_metadata(user, customer)
+    assert updated is should_update
+    assert mock_stripe_customer.modify.called is should_update

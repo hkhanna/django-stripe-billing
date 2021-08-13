@@ -31,10 +31,12 @@ class CreateSubscriptionAPIView(APIView):
             existing = services.stripe_get_customer(request.user)
             if existing:
                 customer.customer_id = existing.id
+                customer.save()
+                services.check_update_stripe_customer_metadata(request.user, existing)
             else:
                 stripe_customer = services.stripe_create_customer(request.user)
                 customer.customer_id = stripe_customer.id
-            customer.save()
+                customer.save()
 
         try:
             subscription, payment_method = services.stripe_create_subscription(

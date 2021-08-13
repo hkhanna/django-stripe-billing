@@ -17,6 +17,7 @@ def stripe_get_customer(user):
     if settings.STRIPE_API_KEY == "mock":
         return None
 
+    candidate = None
     try:
         customers = stripe.Customer.list(email=user.email)
         if len(customers.data) == 0:
@@ -24,7 +25,6 @@ def stripe_get_customer(user):
         if len(customers.data) > 1:
             logger.error(f"User.email={user.email} more than 1 Stripe Customer found")
 
-        candidate = None
         for customer in customers.data:
             pk = getattr(customer.metadata, user_pk_key, None)
             if pk is None:
@@ -40,6 +40,21 @@ def stripe_get_customer(user):
         logger.exception(f"User.email={user.email} Error listing Stripe customers")
 
     return candidate
+
+
+def check_update_stripe_customer_metadata(user, customer):
+    """Confirm the correct metadata is on the Stripe customer and, if not, correct it in Stripe."""
+    pk = getattr(customer.metadata, user_pk_key, None)
+    if pk is None:
+        stripe_modify_customer(user, metadata={user_pk_key: user.pk})
+        return True
+    elif str(pk) == str(user.pk):
+        return False
+    else:
+        logger.error(
+            f"User.email={user.email} check_update_stripe_customer_metadata was called with a bad value for the user's primary key"
+        )
+        return False
 
 
 def stripe_create_customer(user):
