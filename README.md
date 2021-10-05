@@ -44,18 +44,18 @@
 
 ## Running the example app
 
-1. `python -m venv ../venvs/billing`
-1. `source ../venvs/billing/bin/activate`
+1. `python3 -m venv .venv`
+1. `source .venv/bin/activate`
 1. `pip install -r requirements.txt`
 1. OPTIONAL: Use celery for webhook processing: `pip install celery`. If you don't install celery, it will process webhooks synchronously.
-1. `python manage.py migrate`
-1. `python manage.py createsuperuser`
-1. `python manage.py runserver`
+1. `python3 manage.py migrate`
+1. `python3 manage.py createsuperuser`
+1. `python3 manage.py runserver`
 
 ## Running the Test Suite
 
-1. `python -m venv ../venvs/billing`
-1. `source ../venvs/billing/bin/activate`
+1. `python3 -m venv .venv`
+1. `source .venv/bin/activate`
 1. `pip install -r requirements.txt`
 1. OPTIONAL: Use celery for webhook processing: `pip install celery`. If you don't install celery, it will process webhooks synchronously.
 1. `py.test`

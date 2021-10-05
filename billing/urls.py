@@ -26,6 +26,6 @@ urlpatterns = [
     ),
     path("replace-card/", views.ReplaceCardAPIView.as_view(), name="replace-card"),
     path(
-        "stripe/webhook/", views.StripeWebhookAPIView.as_view(), name="stripe-webhook"
+        "stripe/webhook/", views.StripeWebhookAPIView.as_view(), name="stripe_webhook"
     ),
 ]

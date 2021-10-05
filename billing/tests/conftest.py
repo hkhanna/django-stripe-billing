@@ -1,7 +1,11 @@
 import pytest
 import stripe
 from unittest.mock import Mock
-from .. import factories
+
+
+@pytest.fixture(autouse=True)
+def enable_db_access_for_all_tests(db):
+    pass
 
 
 @pytest.fixture(autouse=True)
