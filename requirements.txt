@@ -1,5 +1,6 @@
 black==21.6b0
 Django==3.*
+django-allauth==0.45.*
 django-environ==0.4.5
 djangorestframework==3.*
 freezegun==1.1.0
