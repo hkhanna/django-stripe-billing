@@ -5,6 +5,19 @@ from . import views
 app_name = "billing"
 urlpatterns = [
     path(
+        "create-checkout-session/",
+        views.CreateCheckoutSessionView.as_view(),
+        name="create_checkout_session",
+    ),
+    path(
+        "checkout-success/<str:session_id>/",
+        views.CheckoutSuccessView.as_view(),
+        name="checkout_success",
+    ),
+    path(
+        "stripe/webhook/", views.StripeWebhookAPIView.as_view(), name="stripe_webhook"
+    ),
+    path(
         "create-subscription/",
         views.CreateSubscriptionAPIView.as_view(),
         name="create-subscription",
@@ -25,7 +38,4 @@ urlpatterns = [
         name="reactivate-subscription",
     ),
     path("replace-card/", views.ReplaceCardAPIView.as_view(), name="replace-card"),
-    path(
-        "stripe/webhook/", views.StripeWebhookAPIView.as_view(), name="stripe_webhook"
-    ),
 ]

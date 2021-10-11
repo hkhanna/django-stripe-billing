@@ -30,3 +30,12 @@ def mock_stripe_subscription(monkeypatch):
     mock = Mock()
     monkeypatch.setattr(stripe, "Subscription", mock)
     return mock
+
+
+@pytest.fixture(autouse=True)
+def mock_stripe_checkout(monkeypatch):
+    """Fixture to monkeypatch stripe.checkout.* methods"""
+    mock = Mock()
+    mock.Session.create.return_value.url = "https://example.net/stripe_checkout/"
+    monkeypatch.setattr(stripe, "checkout", mock)
+    return mock

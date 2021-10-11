@@ -13,6 +13,19 @@ def cc_info():
     return {"brand": "visa", "last4": "1111", "exp_month": 11, "exp_year": 2017}
 
 
+def set_customer_paying(customer):
+    """Takes a customer and flips the switches to make it paying"""
+    customer.customer_id = fake.pystr()
+    customer.plan = PlanFactory(paid=True)
+    customer.payment_state = models.Customer.PaymentState.OK
+    customer.current_period_end = fake.date_time_this_month(
+        before_now=False, after_now=True, tzinfo=timezone.utc
+    )
+    customer.subscription_id = fake.pystr()
+    customer.cc_info = cc_info()
+    customer.save()
+
+
 class LimitFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = models.Limit
@@ -82,14 +95,7 @@ class UserFactory(factory.django.DjangoModelFactory):
             return
 
         if extracted:
-            obj.customer.customer_id = fake.pystr()
-            obj.customer.plan = PlanFactory(paid=True)
-            obj.customer.payment_state = models.Customer.PaymentState.OK
-            obj.customer.current_period_end = fake.date_time_this_month(
-                before_now=False, after_now=True, tzinfo=timezone.utc
-            )
-            obj.customer.subscription_id = fake.pystr()
-            obj.customer.cc_info = cc_info()
+            set_customer_paying(obj.customer)
 
     # If we pass in deep attributes to customer, this sets them properly.
     # Since it's defined after `paying`, it will overwrite that trait.
