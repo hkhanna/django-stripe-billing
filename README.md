@@ -22,14 +22,20 @@
 1. Include the billing URLconf in your project urls.py like this:
 
    ```
-       path('billing/', include('billing.urls')),
+       path('billing/', include('billing.urls.checkout')),
+       ... OR ...
+       path('billing/', include('billing.urls.api')),
    ```
 
-1. Add your `STRIPE_API_KEY` to your Django settings. You can set this to a value of "mock" for local development and it will not touch Stripe's services.
-1. Set `BILLING_APPLICATION_NAME` to a unique name for that particular Stripe account. This will allow you to store metadata on customers segregated by application but all in the same Stripe account.
+1. If you are using both checkout and API urls, you will need to give them a unique namespace:
 
-   - N.B. Once this is set and a Stripe customer has been created with it, you really shouldn't change it. Things might still work fine, but something will eventually break. Someday we can write a management command to migrate the Stripe metadata to the new billing application name.
+   ```
+       path('billing/', include('billing.urls.checkout', namespace="checkout")),
+       path('billing/', include('billing.urls.api', namespace="api")),
+   ```
 
+1. If you are using the `billing.urls.api` views, you must have Django REST Framework installed.
+1. Set the configuration variables (see below).
 1. Run `python manage.py migrate` to create the billing models.
 1. Run `python manage.py billing_init`, which will create Customer objects for existing Users. If you don't do this, you may run into errors.
 1. Add this to your user admin file:
@@ -42,6 +48,25 @@
        inlines = [billing.admin.CustomerAdminInline]
    ```
 
+## Configuration
+
+- `BILLING_STRIPE_API_KEY`: The Stripe API key.
+  - **Required**
+  - Use the word "mock" for a mocked Stripe client.
+  - You can also use a test Stripe API key.
+  - Obviously, only use a live environment Stripe API key in production.
+- `BILLING_APPLICATION_NAME`: The name of the application.
+  - **Required**
+  - The Stripe customer metadata will store this in the `application` key.
+- `BILLING_CHECKOUT_SUCCESS_URL`
+  - Required only if you use the Stripe Checkout views.
+  - This view should parse Django messages.
+  - Must be an absolute URL or begin with a `/`.
+- `BILLING_CHECKOUT_CANCEL_URL`
+  - Required only if you use the Stripe Checkout views.
+  - This view should parse Django messages.
+  - Must be an absolute URL or begin with a `/`.
+
 ## Running the example app
 
 1. `python3 -m venv .venv`
@@ -51,6 +76,8 @@
 1. `python3 manage.py migrate`
 1. `python3 manage.py createsuperuser`
 1. `python3 manage.py runserver`
+1. If you are going to run the non-API Stripe Checkout and Checkout Portal flow, you need to set `STRIPE_API_KEY` and setup a Paid plan in the admin with
+   a Stripe `price_id` from the real Stripe testing environment.
 
 ## Running the Test Suite
 

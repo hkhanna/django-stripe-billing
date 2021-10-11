@@ -3,12 +3,12 @@ from datetime import timedelta
 from unittest import mock
 
 import stripe
-from django.conf import settings
 from django.utils import timezone
 from rest_framework.exceptions import APIException
+from . import settings
 
 stripe.api_key = settings.STRIPE_API_KEY
-user_pk_key = settings.BILLING_APPLICATION_NAME + "_user_pk"
+user_pk_key = settings.APPLICATION_NAME + "_user_pk"
 
 logger = logging.getLogger(__name__)
 

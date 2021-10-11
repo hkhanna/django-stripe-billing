@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse
 
-from .. import factories
+from .. import factories, settings
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def paid_plan():
 def test_create_checkout_session_happy(auth_client, paid_plan, mock_stripe_checkout):
     """create_checkout_session creates a Stripe Session
     and redirects to the appropriate URL"""
-    url = reverse("billing:create_checkout_session")
+    url = reverse("checkout:create_checkout_session")
     payload = {"plan_id": paid_plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.call_count == 1
@@ -32,37 +32,37 @@ def test_create_checkout_session_happy(auth_client, paid_plan, mock_stripe_check
 
 
 def test_create_checkout_session_bad_plan_id(
-    settings, auth_client, paid_plan, mock_stripe_checkout
+    auth_client, paid_plan, mock_stripe_checkout
 ):
     """Bad plan id should cancel the checkout flow"""
-    url = reverse("billing:create_checkout_session")
+    url = reverse("checkout:create_checkout_session")
     payload = {"plan_id": paid_plan.id + 1}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
-    assert response.url == reverse(settings.BILLING_CHECKOUT_CANCEL_URL)
+    assert response.url == settings.CHECKOUT_CANCEL_URL
 
 
 def test_create_checkout_session_bad_plan_id(
-    settings, auth_client, paid_plan, mock_stripe_checkout
+    auth_client, paid_plan, mock_stripe_checkout
 ):
     """No plan id should cancel the checkout flow"""
-    url = reverse("billing:create_checkout_session")
+    url = reverse("checkout:create_checkout_session")
     payload = {}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
-    assert response.url == reverse(settings.BILLING_CHECKOUT_CANCEL_URL)
+    assert response.url == settings.CHECKOUT_CANCEL_URL
 
 
 def test_create_checkout_session_already_paid(
-    settings, auth_client, paid_plan, user, mock_stripe_checkout
+    auth_client, paid_plan, user, mock_stripe_checkout
 ):
     """A User with an existing subscription may not access the create_checkout_session endpoint."""
     factories.set_customer_paying(user.customer)
-    url = reverse("billing:create_checkout_session")
+    url = reverse("checkout:create_checkout_session")
     payload = {"plan_id": paid_plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
-    assert response.url == reverse(settings.BILLING_CHECKOUT_CANCEL_URL)
+    assert response.url == settings.CHECKOUT_CANCEL_URL
