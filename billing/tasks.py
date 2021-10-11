@@ -1,10 +1,14 @@
 from datetime import datetime as dt
 import logging
 import traceback
+import stripe
 
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 from . import models
+
+User = get_user_model()
 
 try:
     from celery.utils.log import get_task_logger
@@ -21,8 +25,80 @@ def process_stripe_event(event_id):
     try:
         event.status = models.StripeEvent.Status.PENDING
         event.save()
+
+        # N.B. re event types and subscription creation
+        # There are two things that may be a little confusing here.
+        # First, we handle initial subscription creation for **Checkout** here in the webhooks,
+        # but we don't handle subscription creation for API subscriptions here.
+        # There isn't a good reason for the difference. It's just that doing it in webhooks
+        # is the right paradigm for Checkout. For API it doesn't matter but we built it the other
+        # way first.
+        # Second, we capture the checkout.session.completed event because that's what the docs recommend.
+        # We could probably do it just as well on invoice.paid and if we ever move API-based subscription creation
+        # in webhooks, we should do everything in invoice.paid for less duplicated code.
+
+        # Successful checkout session
+        if event.type == "checkout.session.completed":
+            data_object = event.payload["data"]["object"]
+            session = stripe.checkout.Session.retrieve(
+                data_object["id"],
+                expand=[
+                    "customer",
+                    "line_items",
+                    "subscription.default_payment_method",
+                ],
+            )
+            subscription = session.subscription
+            user = User.objects.get(pk=session.client_reference_id)
+
+            # Get the Plan the Customer signed up for.
+            price_id = session.line_items["data"][0]["price"]["id"]
+            plan = models.Plan.objects.get(
+                price_id=price_id, type=models.Plan.Type.PAID_PUBLIC
+            )
+
+            # Set customer_id if not already set.
+            # Otherwise, confirm the customer_id matches the one on the User.Customer.
+            customer = user.customer
+            if not customer.customer_id:
+                customer.customer_id = session.customer.id
+                customer.save()
+            elif customer.customer_id != session.customer_id:
+                # This should never happen. If it does, log an error
+                # and update the customer_id for the User.Customer.
+                logger.error(
+                    f"User.id={user.id} has a customer_id of {customer.customer_id} but the session customer_id is {session.customer_id}."
+                )
+                customer.customer_id = session.customer.id
+                customer.save()
+
+            customer.subscription_id = subscription.id
+            customer.plan = plan
+            cc_info = subscription.default_payment_method.card
+            customer.cc_info = {
+                k: cc_info[k]
+                for k in cc_info
+                if k in ("brand", "last4", "exp_month", "exp_year")
+            }
+            if subscription.status == "active":
+                customer.current_period_end = dt.fromtimestamp(
+                    subscription.current_period_end, tz=timezone.utc
+                )
+                customer.payment_state = models.Customer.PaymentState.OK
+                customer.save()
+            else:
+                # TODO: does this even happen with one of the test cards?
+                logger.info(
+                    f"User.id={user.id} subscription not active in process_stripe_event checkout.session.completed"
+                )
+                customer.current_period_end = None
+                customer.payment_state = (
+                    models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
+                )
+                customer.save()
+
         # Successful renewal webhook
-        if event.type == "invoice.paid":
+        elif event.type == "invoice.paid":
             invoice = event.payload["data"]["object"]
 
             # billing_reason=subscription_cycle means its a renewal, not a new subscription.

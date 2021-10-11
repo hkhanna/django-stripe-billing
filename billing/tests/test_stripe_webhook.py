@@ -1,21 +1,44 @@
 """Stripe webhook functionality"""
 
+import json
 from datetime import timedelta
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.reverse import reverse
 
 from .. import models, factories
 
-User = get_user_model()
+
+@pytest.fixture
+def user():
+    return factories.UserFactory()
+
+
+@pytest.fixture
+def paid_plan():
+    return factories.PlanFactory(paid=True)
 
 
 @pytest.fixture
 def upcoming_period_end():
     """Period that is upcoming for renewal"""
     return factories.fake.future_datetime(end_date="+5d", tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def session(user, paid_plan, mock_stripe_checkout):
+    session = mock_stripe_checkout.Session.retrieve.return_value
+    current_period_end = timezone.now() + timedelta(days=30)
+    cc_info = factories.cc_info()
+    session.client_reference_id = user.id
+    session.subscription.id = "sub_paid"
+    session.subscription.status = "active"
+    session.subscription.current_period_end = current_period_end.timestamp()
+    session.subscription.default_payment_method.card = cc_info
+    session.customer.id = factories.id("cus")
+    session.line_items = {"data": [{"price": {"id": paid_plan.price_id}}]}
+    return session
 
 
 @pytest.fixture
@@ -57,7 +80,57 @@ def test_unrecognized_type(client):
     assert models.StripeEvent.Status.ERROR == models.StripeEvent.objects.first().status
 
 
-def test_webhook_renewed(client, customer):
+def test_create_subscription(client, user, paid_plan, session, mock_stripe_checkout):
+    """checkout.session.completed should set the customer_id, plan, current_period_end,
+    payment_state and card_info"""
+    url = reverse("billing:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": factories.id("sess")}},
+    }
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert mock_stripe_checkout.Session.retrieve.call_count == 1
+
+    user.refresh_from_db()
+    assert paid_plan == user.customer.plan
+    assert user.customer.customer_id == session.customer.id
+    assert user.customer.payment_state == models.Customer.PaymentState.OK
+    assert (
+        session.subscription.current_period_end
+        == user.customer.current_period_end.timestamp()
+    )
+    assert "sub_paid" == user.customer.subscription_id
+    assert "paid.paying" == user.customer.state
+    assert json.dumps(user.customer.cc_info, sort_keys=True) == json.dumps(
+        session.subscription.default_payment_method.card,
+        sort_keys=True,
+    )
+
+
+def test_create_subscription_mismatched_customer_id(
+    client, user, session, mock_stripe_checkout
+):
+    """A mismatched customer_id returned from the Session should log an error and update the User's customer_id."""
+    url = reverse("billing:stripe_webhook")
+    user.customer.customer_id = "cus_mismatch"
+    user.customer.save()
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": factories.id("sess")}},
+    }
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert mock_stripe_checkout.Session.retrieve.call_count == 1
+    user.refresh_from_db()
+    assert user.customer.customer_id == session.customer.id
+
+
+def test_renewed(client, customer):
     """A renewal was successfully processed for the next billing cycle"""
     # https://stripe.com/docs/billing/subscriptions/webhooks#tracking
     # Listen to an invoice webhook
@@ -87,7 +160,7 @@ def test_webhook_renewed(client, customer):
     assert "paid.paying" == customer.state
 
 
-def test_webhook_payment_failure(client, customer, upcoming_period_end):
+def test_payment_failure(client, customer, upcoming_period_end):
     """A renewal payment failed"""
     # https://stripe.com/docs/billing/subscriptions/webhooks#payment-failures
     # https://stripe.com/docs/billing/subscriptions/overview#build-your-own-handling-for-recurring-charge-failures
@@ -112,7 +185,7 @@ def test_webhook_payment_failure(client, customer, upcoming_period_end):
     assert "paid.past_due.requires_payment_method" == customer.state
 
 
-def test_webhook_payment_failure_permanent(client, customer, upcoming_period_end):
+def test_payment_failure_permanent(client, customer, upcoming_period_end):
     """Renewal payment has permanently failed"""
     # Listen to customer.subscription.updated. status=canceled
     url = reverse("billing:stripe_webhook")
@@ -142,7 +215,7 @@ def test_webhook_payment_failure_permanent(client, customer, upcoming_period_end
     assert "free_default.canceled" == customer.state
 
 
-def test_webhook_incomplete_expired(client, customer):
+def test_incomplete_expired(client, customer):
     """An initial payment failure not cured for 23 hours will cancel the subscription"""
     # Listen to customer.subscription.updated. status=incomplete_expired
 
@@ -169,7 +242,7 @@ def test_webhook_incomplete_expired(client, customer):
     assert "free_default.canceled.incomplete" == customer.state
 
 
-def test_webhook_payment_method_automatically_updated(client, customer):
+def test_payment_method_automatically_updated(client, customer):
     """A network can update a user's credit card automatically"""
     # Listen to payment_method.automatically_updated.
     # See https://stripe.com/docs/saving-cards#automatic-card-updates

@@ -1,7 +1,5 @@
 """Tests related to individual services"""
 from types import SimpleNamespace
-from django.urls import reverse
-import py
 import pytest
 from .. import factories, services
 

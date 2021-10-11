@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse
 
-from .. import factories, settings
+from .. import factories, settings, models
 
 
 @pytest.fixture
@@ -66,3 +66,13 @@ def test_create_checkout_session_already_paid(
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
     assert response.url == settings.CHECKOUT_CANCEL_URL
+
+
+def test_nonpublic_plan(auth_client, mock_stripe_checkout):
+    """Billing Plans that are not public cannot be accessed via Checkout"""
+    plan = factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
+    url = reverse("checkout:create_checkout_session")
+    payload = {"plan_id": plan.id}
+    response = auth_client.post(url, payload)
+    assert mock_stripe_checkout.Session.create.called is False
+    assert response.status_code == 302

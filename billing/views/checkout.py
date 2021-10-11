@@ -65,7 +65,7 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
             mode="subscription",
             line_items=[{"price": plan.price_id, "quantity": 1}],
             customer=customer.customer_id,  # TODO: Test by hand that this is properly set.
-            customer_email=request.user.email,  # TODO: If users change their email on the checkout page, how to handle?
+            customer_email=request.user.email,  # TODO: If users change their email on the checkout page, how to handle? What if this doesn't match what's already on the Stripe customer?
             client_reference_id=request.user.pk,
         )
         return redirect(session.url, permanent=False)
