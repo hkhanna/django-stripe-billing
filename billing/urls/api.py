@@ -1,10 +1,12 @@
 from django.urls import path
 
-from ..views import api
+from ..views import api, webhook
 
 app_name = "billing"
 urlpatterns = [
-    path("stripe/webhook/", api.StripeWebhookAPIView.as_view(), name="stripe_webhook"),
+    path(
+        "stripe/webhook/", webhook.StripeWebhookAPIView.as_view(), name="stripe_webhook"
+    ),
     path(
         "create-subscription/",
         api.CreateSubscriptionAPIView.as_view(),

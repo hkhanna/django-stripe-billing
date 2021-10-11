@@ -95,6 +95,7 @@
 1. In the admin, create billing plans.
 1. In the Stripe dashboard (live environment), the following webhooks should be set to point to `https://production.url/billing/stripe/webhook/`:
 
+- TODO: fix for checkout vs api
 - `invoice.paid`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`

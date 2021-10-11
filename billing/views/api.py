@@ -177,34 +177,3 @@ class ReplaceCardAPIView(APIView):
             return Response(status=201)
         else:
             raise ValidationError("You cannot replace card for this customer.")
-
-
-class StripeWebhookAPIView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        payload = request.data
-
-        if type(payload) != dict or "type" not in payload or "id" not in payload:
-            raise ValidationError("Invalid payload")
-
-        headers = {}
-        for key in request.headers:
-            value = request.headers[key]
-            if isinstance(value, str):
-                headers[key] = value
-
-        event = models.StripeEvent.objects.create(
-            event_id=payload["id"],
-            type=payload["type"],
-            payload=payload,
-            headers=headers,
-            status=models.StripeEvent.Status.NEW,
-        )
-        logger.info(f"StripeEvent.id={event.id} StripeEvent.type={event.type} received")
-        if hasattr(tasks, "shared_task"):
-            tasks.process_stripe_event.delay(event.id)
-        else:
-            tasks.process_stripe_event(event.id)
-
-        return Response(status=201)
