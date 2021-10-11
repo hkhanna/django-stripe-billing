@@ -24,18 +24,11 @@ class CreateSubscriptionAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         customer = request.user.customer
 
-        # If the customer doesn't have a stripe customer_id, check if there's a matching customer on Stripe.
-        # If not, create a Stripe customer now.
+        # If the customer doesn't have a Stripe customer_id, create a new Stripe Customer.
         if not customer.customer_id:
-            existing = services.stripe_get_customer(request.user)
-            if existing:
-                customer.customer_id = existing.id
-                customer.save()
-                services.check_update_stripe_customer_metadata(request.user, existing)
-            else:
-                stripe_customer = services.stripe_create_customer(request.user)
-                customer.customer_id = stripe_customer.id
-                customer.save()
+            stripe_customer = services.stripe_create_customer(request.user)
+            customer.customer_id = stripe_customer.id
+            customer.save()
 
         try:
             subscription, payment_method = services.stripe_create_subscription(

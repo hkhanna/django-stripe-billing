@@ -8,53 +8,8 @@ from rest_framework.exceptions import APIException
 from . import settings
 
 stripe.api_key = settings.STRIPE_API_KEY
-user_pk_key = settings.APPLICATION_NAME + "_user_pk"
 
 logger = logging.getLogger(__name__)
-
-
-def stripe_get_customer(user):
-    if settings.STRIPE_API_KEY == "mock":
-        return None
-
-    candidate = None
-    try:
-        customers = stripe.Customer.list(email=user.email)
-        if len(customers.data) == 0:
-            return None
-        if len(customers.data) > 1:
-            logger.error(f"User.email={user.email} more than 1 Stripe Customer found")
-
-        for customer in customers.data:
-            pk = getattr(customer.metadata, user_pk_key, None)
-            if pk is None:
-                candidate = customer
-            elif str(pk) == str(user.pk):
-                return customer
-            else:
-                logger.error(
-                    f"User.email={user.email} found Stripe customer but user_id does not match."
-                )
-
-    except Exception as e:
-        logger.exception(f"User.email={user.email} Error listing Stripe customers")
-
-    return candidate
-
-
-def check_update_stripe_customer_metadata(user, customer):
-    """Confirm the correct metadata is on the Stripe customer and, if not, correct it in Stripe."""
-    pk = getattr(customer.metadata, user_pk_key, None)
-    if pk is None:
-        stripe_modify_customer(user, metadata={user_pk_key: user.pk})
-        return True
-    elif str(pk) == str(user.pk):
-        return False
-    else:
-        logger.error(
-            f"User.email={user.email} check_update_stripe_customer_metadata was called with a bad value for the user's primary key"
-        )
-        return False
 
 
 def stripe_create_customer(user):
@@ -68,7 +23,7 @@ def stripe_create_customer(user):
         customer = stripe.Customer.create(
             name=user.name,
             email=user.email,
-            metadata={user_pk_key: user.pk},
+            metadata={"user_pk": user.pk, "application": settings.APPLICATION_NAME},
         )
         return customer
 

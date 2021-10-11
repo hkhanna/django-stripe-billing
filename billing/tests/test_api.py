@@ -359,42 +359,6 @@ class SubscriptionAPITest(APITestCase):
         self.assertJSONEqual(json.dumps(self.user.customer.cc_info), cc_info)
         self.assertEqual("paid.paying", self.user.customer.state)
 
-    def test_create_subscription_customer_exists_on_stripe(self, *args):
-        """If a User does not have a customer_id, but the customer is on Stripe
-        with the correct pk, it should use that Customer."""
-        self.user = factories.UserFactory()
-        self.client.force_login(self.user)
-
-        current_period_end = timezone.now() + timedelta(days=30)
-        cc_info = factories.cc_info()
-        args[0].Customer.list.return_value.data = [
-            mock.MagicMock(
-                **{
-                    "id": factories.id("cus"),
-                    "metadata.example_user_pk": str(self.user.pk),
-                }
-            )
-        ]
-        args[0].Subscription.create.return_value.id = "sub_paid"
-        args[0].Subscription.create.return_value.status = "active"
-        args[
-            0
-        ].Subscription.create.return_value.current_period_end = (
-            current_period_end.timestamp()
-        )
-        args[0].PaymentMethod.attach.return_value.card = cc_info
-        paid_plan = factories.PlanFactory(paid=True)
-
-        url = reverse("billing:create-subscription")
-        payload = {
-            "payment_method_id": factories.id("payment"),
-            "plan_id": paid_plan.id,
-        }
-        response = self.client.post(url, payload)
-        self.assertEqual(201, response.status_code)
-        args[0].Customer.create.assert_not_called()
-        args[0].Subscription.create.assert_called_once()
-
     def test_create_subscription_failed(self, *args):
         """Create Subscription endpoint attaches the payment method to the Customer but the charge fails. Should set
         the customer's payment_state and state but the plan and current_period_end should not be modified."""
