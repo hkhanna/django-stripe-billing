@@ -12,6 +12,36 @@ stripe.api_key = settings.STRIPE_API_KEY
 logger = logging.getLogger(__name__)
 
 
+def stripe_customer_check_metadata(user):
+    """If a Stripe customer has metadata, it should make sense.
+    If there is no metadata, create it. If the metadata exists but
+    appears wrong, log an error."""
+    if settings.STRIPE_API_KEY == "mock":
+        return
+    stripe_customer = stripe.Customer.retrieve(user.customer.customer_id)
+    metadata = stripe_customer.metadata
+    new_metadata = {}
+    user_pk = metadata.get("user_pk", None)
+    application = metadata.get("application", None)
+
+    if not user_pk:
+        new_metadata["user_pk"] = user.pk
+    elif user_pk != user.pk:
+        logger.error(
+            f"User.id={user.pk} does not match Stripe metadata user_pk {user_pk}."
+        )
+
+    if not application:
+        new_metadata["application"] = settings.APPLICATION_NAME
+    elif application != settings.APPLICATION_NAME:
+        logger.error(
+            f"User.id={user.pk} Application name {settings.APPLICATION_NAME} does not match Stripe metadata {application}"
+        )
+
+    if new_metadata:
+        stripe_modify_customer(user, metadata=new_metadata)
+
+
 def stripe_create_customer(user):
     if settings.STRIPE_API_KEY == "mock":
         from . import factories
@@ -29,7 +59,7 @@ def stripe_create_customer(user):
 
     except Exception as e:
         logger.exception("Error creating Stripe customer")
-        raise APIException(
+        raise APIException(  # TODO
             "These was a problem connecting to Stripe. Please try again."
         )
 

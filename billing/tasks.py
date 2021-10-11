@@ -6,6 +6,8 @@ import stripe
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
+from billing import services
+
 from . import models
 
 User = get_user_model()
@@ -80,6 +82,7 @@ def process_stripe_event(event_id):
                 for k in cc_info
                 if k in ("brand", "last4", "exp_month", "exp_year")
             }
+            services.stripe_customer_check_metadata(user)
             if subscription.status == "active":
                 customer.current_period_end = dt.fromtimestamp(
                     subscription.current_period_end, tz=timezone.utc
@@ -96,6 +99,8 @@ def process_stripe_event(event_id):
                     models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
                 )
                 customer.save()
+
+            event.status = models.StripeEvent.Status.PROCESSED
 
         # Successful renewal webhook
         elif event.type == "invoice.paid":

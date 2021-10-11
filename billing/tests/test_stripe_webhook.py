@@ -108,6 +108,9 @@ def test_create_subscription(client, user, paid_plan, session, mock_stripe_check
         session.subscription.default_payment_method.card,
         sort_keys=True,
     )
+    assert (
+        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
+    )
 
 
 def test_create_subscription_mismatched_customer_id(
@@ -128,6 +131,55 @@ def test_create_subscription_mismatched_customer_id(
     assert mock_stripe_checkout.Session.retrieve.call_count == 1
     user.refresh_from_db()
     assert user.customer.customer_id == session.customer.id
+    assert (
+        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
+    )
+
+
+def test_create_subscription_metadata(caplog, client, session, mock_stripe_customer):
+    """Creation of a subscription updates the metadata on a Customer."""
+    mock_stripe_customer.retrieve.return_value.metadata = {}
+    url = reverse("billing:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": factories.id("sess")}},
+    }
+    with caplog.at_level("ERROR"):
+        response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert mock_stripe_customer.retrieve.call_count == 1
+    assert mock_stripe_customer.modify.call_count == 1
+    assert len(caplog.records) == 0
+    assert (
+        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
+    )
+
+
+def test_create_subscription_bad_metadata(
+    caplog, client, session, mock_stripe_customer
+):
+    mock_stripe_customer.retrieve.return_value.metadata = {
+        "user_pk": "bad",
+        "application": "bad",
+    }
+    url = reverse("billing:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": factories.id("sess")}},
+    }
+    with caplog.at_level("ERROR"):
+        response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert mock_stripe_customer.retrieve.call_count == 1
+    assert mock_stripe_customer.modify.call_count == 0
+    assert len(caplog.records) == 2
+    assert (
+        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
+    )
 
 
 def test_renewed(client, customer):
