@@ -1,4 +1,15 @@
 {% extends "example/base.html" %}
 {% block content %}
-Hello world.
+{% for message in messages %}
+- {{ message }}
+{% endfor %}
+{% if request.user.customer.state == "free_default.new" %}
+<form action={% url 'billing:checkout:create_checkout_session' %} method="POST">
+{% csrf_token %}
+  <input type="hidden" name="plan_id" value="{{plan_id}}" />
+  <button type="submit">Create Subscription</button>
+</form>
+{% else %}
+Other buttons to come.
+{% endif %}
 {% endblock content %}

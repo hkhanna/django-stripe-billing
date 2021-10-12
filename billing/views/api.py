@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 import stripe
 
-from .. import serializers, models, services, tasks
+from .. import serializers, models, services
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -27,6 +27,10 @@ class CreateSubscriptionAPIView(APIView):
         # If the customer doesn't have a Stripe customer_id, create a new Stripe Customer.
         if not customer.customer_id:
             stripe_customer = services.stripe_create_customer(request.user)
+            if stripe_customer is None:
+                raise ValidationError(
+                    "These was a problem connecting to Stripe. Please try again."
+                )
             customer.customer_id = stripe_customer.id
             customer.save()
 
@@ -47,7 +51,7 @@ class CreateSubscriptionAPIView(APIView):
             for k in cc_info
             if k in ("brand", "last4", "exp_month", "exp_year")
         }
-        services.stripe_customer_check_metadata(request.user)
+        services.stripe_customer_sync_metadata_email(request.user, customer.customer_id)
         if subscription.status == "active":
             customer.current_period_end = dt.fromtimestamp(
                 subscription.current_period_end, tz=timezone.utc

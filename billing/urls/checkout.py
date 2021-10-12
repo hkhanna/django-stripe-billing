@@ -2,7 +2,7 @@ from django.urls import path
 
 from ..views import checkout, webhook
 
-app_name = "billing"
+app_name = "billing_checkout"
 urlpatterns = [
     path(
         "create-checkout-session/",

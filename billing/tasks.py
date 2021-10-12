@@ -82,7 +82,6 @@ def process_stripe_event(event_id):
                 for k in cc_info
                 if k in ("brand", "last4", "exp_month", "exp_year")
             }
-            services.stripe_customer_check_metadata(user)
             if subscription.status == "active":
                 customer.current_period_end = dt.fromtimestamp(
                     subscription.current_period_end, tz=timezone.utc

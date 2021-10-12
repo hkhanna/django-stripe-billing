@@ -6,9 +6,10 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.shortcuts import redirect
 from django.contrib import messages
+from django.urls import reverse
 import stripe
 
-from .. import models, settings
+from .. import models, settings, services
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -47,15 +48,20 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
             messages.error(request, "User already has a subscription.")
             return redirect(settings.CHECKOUT_CANCEL_URL)
 
-        # If it's not an absolute URL, make it one.
-        success_url = settings.CHECKOUT_SUCCESS_URL
-        if not urlparse(success_url).netloc:
-            success_url = f"https://{request.get_host()}{success_url}"
+        success_url = reverse("billing_checkout:checkout_success")
+        success_url = f"{request.scheme}://{request.get_host()}{success_url}"
         success_url += "?session_id={CHECKOUT_SESSION_ID}"
 
+        # If it's not an absolute URL, make it one.
         cancel_url = settings.CHECKOUT_CANCEL_URL
         if not urlparse(cancel_url).netloc:
-            cancel_url = f"https://{request.get_host()}{cancel_url}"
+            cancel_url = f"{request.scheme}://{request.get_host()}{cancel_url}"
+
+        # Send either customer_id or customer_email (Stripe does not allow both)
+        if not customer.customer_id:
+            customer_email = None
+        else:
+            customer_email = request.user.email
 
         # Create Session if all is well.
         session = stripe.checkout.Session.create(
@@ -64,13 +70,50 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
             payment_method_types=["card"],
             mode="subscription",
             line_items=[{"price": plan.price_id, "quantity": 1}],
-            customer=customer.customer_id,  # TODO: Test by hand that this is properly set.
-            customer_email=request.user.email,  # TODO: If users change their email on the checkout page, how to handle? What if this doesn't match what's already on the Stripe customer?
             client_reference_id=request.user.pk,
+            # Only one of customer or customer_email may be provided
+            customer=customer.customer_id,
+            customer_email=customer_email,
         )
         return redirect(session.url, permanent=False)
 
 
 class CheckoutSuccessView(LoginRequiredMixin, View):
     def get(self, request):
+        session_id = request.GET.get("session_id")
+        if not session_id:
+            messages.error(request, "No session id provided.")
+            return redirect(settings.CHECKOUT_CANCEL_URL)
+
+        try:
+            session = stripe.checkout.Session.retrieve(session_id, expand=["customer"])
+        except stripe.error.InvalidRequestError as e:
+            messages.error(request, "Invalid session id provided.")
+            return redirect(settings.CHECKOUT_CANCEL_URL)
+
+        # Gut check the client_reference_id is correct and customer id is expected.
+        if session.client_reference_id != request.user.pk:
+            msg = f"User.id={request.user.id} does not match session.client_reference_id={session.client_reference_id}"
+            logger.error(msg)
+            messages.error(
+                request,
+                "There was a problem processing your request. Please try again later.",
+            )
+            return redirect(settings.CHECKOUT_CANCEL_URL)
+
+        customer = request.user.customer
+        if customer.customer_id and (session.customer.id != customer.customer_id):
+            msg = f"customer_id={customer.customer_id} on user.customer does not match session.customer.id={session.customer.id}"
+            logger.error(msg)
+            messages.error(
+                request,
+                "There was a problem processing your request. Please try again later.",
+            )
+            return redirect(settings.CHECKOUT_CANCEL_URL)
+
+        # If users change their email on the checkout page, this will change it back
+        # on the Stripe Customer.
+        services.stripe_customer_sync_metadata_email(request.user, session.customer.id)
+        messages.success(request, "Successfully subscribed!")
+
         return redirect(settings.CHECKOUT_SUCCESS_URL)

@@ -296,7 +296,7 @@ class SubscriptionAPITest(APITestCase):
         self.user = factories.UserFactory()
         self.client.force_login(self.user)
 
-        url = reverse("billing:create-subscription")
+        url = reverse("billing_api:create-subscription")
         payload = {
             "payment_method_id": factories.id("payment"),
             "plan_id": paid_plan.id,
@@ -336,7 +336,7 @@ class SubscriptionAPITest(APITestCase):
         self.user = factories.UserFactory(customer__customer_id="cus_xyz")
         self.client.force_login(self.user)
 
-        url = reverse("billing:create-subscription")
+        url = reverse("billing_api:create-subscription")
         payload = {
             "payment_method_id": factories.id("payment"),
             "plan_id": paid_plan.id,
@@ -377,7 +377,7 @@ class SubscriptionAPITest(APITestCase):
         self.client.force_login(self.user)
 
         paid_plan = factories.PlanFactory(paid=True)
-        url = reverse("billing:create-subscription")
+        url = reverse("billing_api:create-subscription")
         payload = {
             "payment_method_id": factories.id("payment"),
             "plan_id": paid_plan.id,
@@ -424,7 +424,7 @@ class SubscriptionAPITest(APITestCase):
             "lines": {"data": [{"period": {"end": mock_period_end.timestamp()}}]},
         }
 
-        url = reverse("billing:cure-failed-card")
+        url = reverse("billing_api:cure-failed-card")
         payload = {"payment_method_id": "abc"}
         response = self.client.post(url, payload)
         self.assertEqual(201, response.status_code)
@@ -453,7 +453,7 @@ class SubscriptionAPITest(APITestCase):
         )
         self.client.force_login(self.user)
 
-        url = reverse("billing:create-subscription")
+        url = reverse("billing_api:create-subscription")
         payload = {"payment_method_id": "abc", "plan_id": self.user.customer.plan.id}
         response = self.client.post(url, payload)
         self.assertContains(response, "has a subscription", status_code=400)
@@ -465,7 +465,7 @@ class SubscriptionAPITest(APITestCase):
         self.user = factories.UserFactory()
         self.client.force_login(self.user)
 
-        url = reverse("billing:create-subscription")
+        url = reverse("billing_api:create-subscription")
         payload = {"payment_method_id": "abc", "plan_id": plan.id}
         response = self.client.post(url, payload)
         self.assertContains(response, "plan does not exist", status_code=400)
@@ -476,7 +476,7 @@ class SubscriptionAPITest(APITestCase):
         but otherwise does not affect the billing plan."""
         self.user = factories.UserFactory(paying=True)
         self.client.force_login(self.user)
-        url = reverse("billing:cancel-subscription")
+        url = reverse("billing_api:cancel-subscription")
         response = self.client.post(url)
         self.assertEqual(201, response.status_code)
         self.user.customer.refresh_from_db()
@@ -492,7 +492,7 @@ class SubscriptionAPITest(APITestCase):
             paying=True, customer__payment_state=models.Customer.PaymentState.OFF
         )
         self.client.force_login(self.user)
-        url = reverse("billing:cancel-subscription")
+        url = reverse("billing_api:cancel-subscription")
         response = self.client.post(url)
         self.assertContains(
             response, "No active subscription to cancel", status_code=400
@@ -506,7 +506,7 @@ class SubscriptionAPITest(APITestCase):
         self.client.force_login(self.user)
         subscription_id = self.user.customer.subscription_id
 
-        url = reverse("billing:reactivate-subscription")
+        url = reverse("billing_api:reactivate-subscription")
         response = self.client.post(url)
         self.assertEqual(201, response.status_code)
         self.user.customer.refresh_from_db()
@@ -525,7 +525,7 @@ class SubscriptionAPITest(APITestCase):
         )
         self.client.force_login(self.user)
 
-        url = reverse("billing:reactivate-subscription")
+        url = reverse("billing_api:reactivate-subscription")
 
         # First, the sub is already canceled
         self.user.customer.current_period_end = timezone.now() - timedelta(days=10)
@@ -579,7 +579,7 @@ class SubscriptionAPITest(APITestCase):
             }
         )
         args[0].PaymentMethod.attach.return_value.card = new_cc_info
-        url = reverse("billing:create-subscription")
+        url = reverse("billing_api:create-subscription")
         payload = {"payment_method_id": "abc", "plan_id": plan_id}
         response = self.client.post(url, payload)
         self.assertEqual(201, response.status_code)
@@ -609,7 +609,7 @@ class SubscriptionAPITest(APITestCase):
             "exp_year": 2017,
         }
         args[0].PaymentMethod.attach.return_value.card = new_cc_info
-        url = reverse("billing:replace-card")
+        url = reverse("billing_api:replace-card")
         payload = {"payment_method_id": "abc"}
         response = self.client.post(url, payload)
         self.assertEqual(201, response.status_code)

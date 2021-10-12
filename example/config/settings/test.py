@@ -6,4 +6,4 @@ import os
 from .local import *
 
 # Stripe - Don't use the 'mock' key because we want to patch the stripe library in the tests
-STRIPE_API_KEY = "testing"
+BILLING_STRIPE_API_KEY = "testing"

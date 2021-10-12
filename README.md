@@ -22,16 +22,16 @@
 1. Include the billing URLconf in your project urls.py like this:
 
    ```
-       path('billing/', include('billing.urls.checkout')),
+       path('billing/', include('billing.urls.checkout')),  # namespace is billing_checkout
        ... OR ...
-       path('billing/', include('billing.urls.api')),
+       path('billing/', include('billing.urls.api')),  # namespace is billing_api
    ```
 
-1. If you are using both checkout and API urls, you will need to give them a unique namespace:
+1. You can use both checkout and API functionality if you wish.
 
    ```
-       path('billing/', include('billing.urls.checkout', namespace="checkout")),
-       path('billing/', include('billing.urls.api', namespace="api")),
+       path('billing/', include('billing.urls.checkout')),
+       path('billing/', include('billing.urls.api'))
    ```
 
 1. If you are using the `billing.urls.api` views, you must have Django REST Framework installed.
@@ -76,7 +76,7 @@
 1. `python3 manage.py migrate`
 1. `python3 manage.py createsuperuser`
 1. `python3 manage.py runserver`
-1. If you are going to run the non-API Stripe Checkout and Checkout Portal flow, you need to set `STRIPE_API_KEY` and setup a Paid plan in the admin with
+1. If you are going to run the non-API Stripe Checkout and Checkout Portal flow, you need to set `BILLING_STRIPE_API_KEY` and setup a Paid plan in the admin with
    a Stripe `price_id` from the real Stripe testing environment.
 
 ## Running the Test Suite
@@ -89,13 +89,14 @@
 
 ## Deployment to Heroku
 
-1. Add `STRIPE_API_KEY` to the environment variables.
+1. Add `BILLING_STRIPE_API_KEY` to the environment variables.
 1. In your Stripe dashboard, you _must_ configure it to cancel a customer's subscription if all retries for a payment fail.
+1. Do not allow the Customer to update their email address in Customer Portal.
 1. In your Stripe dashboard, set up a product (with an optional statement descriptor), and set up a price for that product.
 1. In the admin, create billing plans.
 1. In the Stripe dashboard (live environment), the following webhooks should be set to point to `https://production.url/billing/stripe/webhook/`:
 
-- TODO: fix for checkout vs api
+- `checkout.session.completed` (only if you are using Stripe Checkouts)
 - `invoice.paid`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
@@ -105,13 +106,20 @@
 
 - The app should automatically create a Default Free plan during installation.
 - To see relevant billing info in your admin, add `billing.admin.CustomerAdminInline` to your User admin `inlines`.
-- `billing.serializers.CustomerSerializer` is available for returning Customer information. You can use it as a nested serializer in your User serializer.
-  - E.g., `customer = billing.serializers.CustomerSerializer(read_only=True)`
 - Users must have a first name, last name and email.
 - Deleting a User or setting User.is_active to false will cancel any active Stripe subscriptions.
 - Updating a User's first name, last name or email will update it on Stripe.
 
-### Available API endpoints
+### Checkout Usage
+
+- `POST` to `billing:create_checkout_session` to create a Stripe Checkout Session.
+
+### API Usage
+
+- `billing.serializers.CustomerSerializer` is available for returning Customer information. You can use it as a nested serializer in your User serializer.
+  - E.g., `customer = billing.serializers.CustomerSerializer(read_only=True)`
+
+#### Available API endpoints
 
 - `/billing/create-subscription/`
 - `/billing/cure-failed-card/`
@@ -135,11 +143,11 @@ This package includes factories and serializers for use. Documentation to come!
 
 ## Development Stripe Notes
 
-Generally, you won't need to use a real test environment `STRIPE_API_KEY` during local development. If `STRIPE_API_KEY=mock`, the application will be careful not to interface with Stripe and instead mock all of its responses.
+Generally, you won't need to use a real test environment `BILLING_STRIPE_API_KEY` during local development. If `BILLING_STRIPE_API_KEY=mock`, the application will be careful not to interface with Stripe and instead mock all of its responses.
 
 But when testing, you may not want to use the `mock` sentinel since it may be difficult to introspect interactions with the Stripe library. Instead, you may just want to use `unittest.patch` like normal.
 
-You can, of course, set the STRIPE_API_KEY variable to a real test environment key and it will interact with the Stripe testing environment. If you do this, you should create a RK by hand in the Stripe test environment console and use that.
+You can, of course, set the `BILLING_STRIPE_API_KEY` variable to a real test environment key and it will interact with the Stripe testing environment. If you do this, you should create a RK by hand in the Stripe test environment console and use that.
 
 ## Deleting Test Data
 

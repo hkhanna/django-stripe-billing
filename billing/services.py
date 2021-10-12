@@ -4,7 +4,6 @@ from unittest import mock
 
 import stripe
 from django.utils import timezone
-from rest_framework.exceptions import APIException
 from . import settings
 
 stripe.api_key = settings.STRIPE_API_KEY
@@ -12,34 +11,48 @@ stripe.api_key = settings.STRIPE_API_KEY
 logger = logging.getLogger(__name__)
 
 
-def stripe_customer_check_metadata(user):
+def stripe_customer_sync_metadata_email(user, stripe_customer_id):
     """If a Stripe customer has metadata, it should make sense.
     If there is no metadata, create it. If the metadata exists but
-    appears wrong, log an error."""
+    appears wrong, log an error. Finally, sync the Stripe Customer's email
+    to whatever is in the Django db."""
     if settings.STRIPE_API_KEY == "mock":
         return
-    stripe_customer = stripe.Customer.retrieve(user.customer.customer_id)
+    stripe_customer = stripe.Customer.retrieve(stripe_customer_id)
     metadata = stripe_customer.metadata
-    new_metadata = {}
+    customer_update = {}
     user_pk = metadata.get("user_pk", None)
     application = metadata.get("application", None)
-
-    if not user_pk:
-        new_metadata["user_pk"] = user.pk
-    elif user_pk != user.pk:
-        logger.error(
-            f"User.id={user.pk} does not match Stripe metadata user_pk {user_pk}."
-        )
+    errored = False
 
     if not application:
-        new_metadata["application"] = settings.APPLICATION_NAME
+        customer_update.setdefault("metadata", {})
+        customer_update["metadata"]["application"] = settings.APPLICATION_NAME
     elif application != settings.APPLICATION_NAME:
         logger.error(
             f"User.id={user.pk} Application name {settings.APPLICATION_NAME} does not match Stripe metadata {application}"
         )
+        errored = True
 
-    if new_metadata:
-        stripe_modify_customer(user, metadata=new_metadata)
+    if not user_pk:
+        customer_update.setdefault("metadata", {})
+        customer_update["metadata"]["user_pk"] = user.pk
+    elif user_pk != user.pk:
+        logger.error(
+            f"User.id={user.pk} does not match Stripe metadata user_pk {user_pk}."
+        )
+        errored = True
+
+    if errored:
+        return False
+
+    if user.email != stripe_customer.email:
+        logger.warning(
+            f"User.id={user.pk} changed their email on Stripe to {stripe_customer.email}. Reverting."
+        )
+        customer_update["email"] = user.email
+    if customer_update:
+        stripe_modify_customer(user, **customer_update)
 
 
 def stripe_create_customer(user):
@@ -59,9 +72,7 @@ def stripe_create_customer(user):
 
     except Exception as e:
         logger.exception("Error creating Stripe customer")
-        raise APIException(  # TODO
-            "These was a problem connecting to Stripe. Please try again."
-        )
+        return None
 
 
 def stripe_modify_customer(user, **kwargs):

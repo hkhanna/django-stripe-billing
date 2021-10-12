@@ -5,40 +5,15 @@ from datetime import timedelta
 
 import pytest
 from django.utils import timezone
-from rest_framework.reverse import reverse
+from django.urls import reverse
 
 from .. import models, factories
-
-
-@pytest.fixture
-def user():
-    return factories.UserFactory()
-
-
-@pytest.fixture
-def paid_plan():
-    return factories.PlanFactory(paid=True)
 
 
 @pytest.fixture
 def upcoming_period_end():
     """Period that is upcoming for renewal"""
     return factories.fake.future_datetime(end_date="+5d", tzinfo=timezone.utc)
-
-
-@pytest.fixture
-def session(user, paid_plan, mock_stripe_checkout):
-    session = mock_stripe_checkout.Session.retrieve.return_value
-    current_period_end = timezone.now() + timedelta(days=30)
-    cc_info = factories.cc_info()
-    session.client_reference_id = user.id
-    session.subscription.id = "sub_paid"
-    session.subscription.status = "active"
-    session.subscription.current_period_end = current_period_end.timestamp()
-    session.subscription.default_payment_method.card = cc_info
-    session.customer.id = factories.id("cus")
-    session.line_items = {"data": [{"price": {"id": paid_plan.price_id}}]}
-    return session
 
 
 @pytest.fixture
@@ -55,7 +30,7 @@ def customer(upcoming_period_end):
 
 def test_create_event(client):
     """Create event"""
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = {"id": "evt_test", "object": "event", "type": "test"}
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
@@ -64,7 +39,7 @@ def test_create_event(client):
 
 def test_bad_json(client):
     """Malformed JSON"""
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = "bad json"
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 400
@@ -73,7 +48,7 @@ def test_bad_json(client):
 
 def test_unrecognized_type(client):
     """Unrecognized event type"""
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = {"id": "evt_test", "object": "event", "type": "bad.type"}
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
@@ -83,7 +58,7 @@ def test_unrecognized_type(client):
 def test_create_subscription(client, user, paid_plan, session, mock_stripe_checkout):
     """checkout.session.completed should set the customer_id, plan, current_period_end,
     payment_state and card_info"""
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -117,7 +92,7 @@ def test_create_subscription_mismatched_customer_id(
     client, user, session, mock_stripe_checkout
 ):
     """A mismatched customer_id returned from the Session should log an error and update the User's customer_id."""
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     user.customer.customer_id = "cus_mismatch"
     user.customer.save()
     payload = {
@@ -136,57 +111,11 @@ def test_create_subscription_mismatched_customer_id(
     )
 
 
-def test_create_subscription_metadata(caplog, client, session, mock_stripe_customer):
-    """Creation of a subscription updates the metadata on a Customer."""
-    mock_stripe_customer.retrieve.return_value.metadata = {}
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "checkout.session.completed",
-        "data": {"object": {"id": factories.id("sess")}},
-    }
-    with caplog.at_level("ERROR"):
-        response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    assert mock_stripe_customer.retrieve.call_count == 1
-    assert mock_stripe_customer.modify.call_count == 1
-    assert len(caplog.records) == 0
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
-
-
-def test_create_subscription_bad_metadata(
-    caplog, client, session, mock_stripe_customer
-):
-    mock_stripe_customer.retrieve.return_value.metadata = {
-        "user_pk": "bad",
-        "application": "bad",
-    }
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "checkout.session.completed",
-        "data": {"object": {"id": factories.id("sess")}},
-    }
-    with caplog.at_level("ERROR"):
-        response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    assert mock_stripe_customer.retrieve.call_count == 1
-    assert mock_stripe_customer.modify.call_count == 0
-    assert len(caplog.records) == 2
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
-
-
 def test_renewed(client, customer):
     """A renewal was successfully processed for the next billing cycle"""
     # https://stripe.com/docs/billing/subscriptions/webhooks#tracking
     # Listen to an invoice webhook
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     mock_period_end = timezone.now() + timedelta(days=30)
     payload = {
         "id": "evt_test",
@@ -217,7 +146,7 @@ def test_payment_failure(client, customer, upcoming_period_end):
     # https://stripe.com/docs/billing/subscriptions/webhooks#payment-failures
     # https://stripe.com/docs/billing/subscriptions/overview#build-your-own-handling-for-recurring-charge-failures
     # Listen to customer.subscription.updated. status=past_due
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -240,7 +169,7 @@ def test_payment_failure(client, customer, upcoming_period_end):
 def test_payment_failure_permanent(client, customer, upcoming_period_end):
     """Renewal payment has permanently failed"""
     # Listen to customer.subscription.updated. status=canceled
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -277,7 +206,7 @@ def test_incomplete_expired(client, customer):
     customer.save()
     assert "free_default.incomplete.requires_payment_method" == customer.state
 
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -298,7 +227,7 @@ def test_payment_method_automatically_updated(client, customer):
     """A network can update a user's credit card automatically"""
     # Listen to payment_method.automatically_updated.
     # See https://stripe.com/docs/saving-cards#automatic-card-updates
-    url = reverse("billing:stripe_webhook")
+    url = reverse("billing_api:stripe_webhook")
     new_card = {"brand": "amex", "exp_month": 8, "exp_year": 2021, "last4": 1234}
     payload = {
         "id": "evt_test",

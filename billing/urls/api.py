@@ -2,7 +2,7 @@ from django.urls import path
 
 from ..views import api, webhook
 
-app_name = "billing"
+app_name = "billing_api"
 urlpatterns = [
     path(
         "stripe/webhook/", webhook.StripeWebhookAPIView.as_view(), name="stripe_webhook"

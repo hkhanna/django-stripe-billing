@@ -229,8 +229,10 @@ ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_AUTHENTICATION_METHOD = "email"
 
 # Billing
-STRIPE_API_KEY = env("STRIPE_API_KEY", default="mock")
+BILLING_STRIPE_API_KEY = env("BILLING_STRIPE_API_KEY", default="mock")
 BILLING_APPLICATION_NAME = "example"
+BILLING_CHECKOUT_SUCCESS_URL = "/accounts/profile/"
+BILLING_CHECKOUT_CANCEL_URL = "/accounts/profile/"
 
 # Celery - Will only be used if you pip install celery
 # https://docs.celeryproject.org/en/stable/getting-started/brokers/redis.html
