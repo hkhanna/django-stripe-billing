@@ -37,7 +37,7 @@ def stripe_customer_sync_metadata_email(user, stripe_customer_id):
     if not user_pk:
         customer_update.setdefault("metadata", {})
         customer_update["metadata"]["user_pk"] = user.pk
-    elif user_pk != user.pk:
+    elif str(user_pk) != str(user.pk):
         logger.error(
             f"User.id={user.pk} does not match Stripe metadata user_pk {user_pk}."
         )

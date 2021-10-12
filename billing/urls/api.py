@@ -4,9 +4,7 @@ from ..views import api, webhook
 
 app_name = "billing_api"
 urlpatterns = [
-    path(
-        "stripe/webhook/", webhook.StripeWebhookAPIView.as_view(), name="stripe_webhook"
-    ),
+    path("stripe/webhook/", webhook.stripe_webhook_view, name="stripe_webhook"),
     path(
         "create-subscription/",
         api.CreateSubscriptionAPIView.as_view(),

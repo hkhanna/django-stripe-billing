@@ -113,6 +113,7 @@
 ### Checkout Usage
 
 - `POST` to `billing:create_checkout_session` to create a Stripe Checkout Session.
+- Look at the example app for more details on how to use it.
 
 ### API Usage
 

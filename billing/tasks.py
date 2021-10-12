@@ -65,7 +65,7 @@ def process_stripe_event(event_id):
             if not customer.customer_id:
                 customer.customer_id = session.customer.id
                 customer.save()
-            elif customer.customer_id != session.customer_id:
+            elif customer.customer_id != session.customer.id:
                 # This should never happen. If it does, log an error
                 # and update the customer_id for the User.Customer.
                 logger.error(

@@ -14,7 +14,7 @@ from .. import models, settings, services
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-for setting in ("CHECKOUT_SUCCESS_URL", "CHECKOUT_CANCEL_URL"):
+for setting in ("CHECKOUT_SUCCESS_URL", "CHECKOUT_CANCEL_URL", "PORTAL_RETURN_URL"):
     missing = []
     if getattr(settings, setting) is None:
         missing.append(setting)
@@ -58,7 +58,7 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
             cancel_url = f"{request.scheme}://{request.get_host()}{cancel_url}"
 
         # Send either customer_id or customer_email (Stripe does not allow both)
-        if not customer.customer_id:
+        if customer.customer_id:
             customer_email = None
         else:
             customer_email = request.user.email
@@ -92,7 +92,7 @@ class CheckoutSuccessView(LoginRequiredMixin, View):
             return redirect(settings.CHECKOUT_CANCEL_URL)
 
         # Gut check the client_reference_id is correct and customer id is expected.
-        if session.client_reference_id != request.user.pk:
+        if str(session.client_reference_id) != str(request.user.pk):
             msg = f"User.id={request.user.id} does not match session.client_reference_id={session.client_reference_id}"
             logger.error(msg)
             messages.error(
@@ -117,3 +117,23 @@ class CheckoutSuccessView(LoginRequiredMixin, View):
         messages.success(request, "Successfully subscribed!")
 
         return redirect(settings.CHECKOUT_SUCCESS_URL)
+
+
+class CreatePortalView(LoginRequiredMixin, View):
+    def post(self, request):
+
+        # If it's not an absolute URL, make it one.
+        return_url = settings.PORTAL_RETURN_URL
+        if not urlparse(return_url).netloc:
+            return_url = f"{request.scheme}://{request.get_host()}{return_url}"
+
+        customer_id = request.user.customer.customer_id
+
+        # TODO make sure user should be able to access the portal
+
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+
+        return redirect(session.url, permanent=False)
