@@ -29,7 +29,7 @@ def stripe_webhook_view(request):
     event = models.StripeEvent.objects.create(
         event_id=payload["id"],
         type=payload["type"],
-        payload=payload,
+        body=request.body.decode("utf-8"),
         headers=headers,
         status=models.StripeEvent.Status.NEW,
     )

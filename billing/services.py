@@ -180,3 +180,10 @@ def stripe_reactivate_subscription(subscription_id):
 
     # https://stripe.com/docs/billing/subscriptions/cancel#reactivating-canceled-subscriptions
     return stripe.Subscription.modify(subscription_id, cancel_at_period_end=False)
+
+
+def stripe_check_webhook_signature(event):
+    sig_header = event.headers["Stripe-Signature"].strip()
+    stripe.Webhook.construct_event(
+        event.body, sig_header, settings.STRIPE_WH_SECRET.strip()
+    )

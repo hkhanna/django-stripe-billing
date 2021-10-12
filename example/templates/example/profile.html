@@ -14,7 +14,6 @@
 {% elif can_cancel %}
 <form action={% url 'billing_checkout:create_portal_session' %} method="POST">
 {% csrf_token %}
-  <input type="hidden" name="plan_id" value="{{plan_id}}" />
   <button type="submit">Cancel Subscription</button>
 </form>
 {% endif %}

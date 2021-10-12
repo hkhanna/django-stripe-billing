@@ -1,3 +1,4 @@
+import json
 from datetime import datetime as dt
 import logging
 import traceback
@@ -6,9 +7,7 @@ import stripe
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
-from billing import services
-
-from . import models
+from . import models, settings, services
 
 User = get_user_model()
 
@@ -28,6 +27,9 @@ def process_stripe_event(event_id):
         event.status = models.StripeEvent.Status.PENDING
         event.save()
 
+        if settings.STRIPE_WH_SECRET:
+            services.stripe_check_webhook_signature(event)
+
         # N.B. re event types and subscription creation
         # There are two things that may be a little confusing here.
         # First, we handle initial subscription creation for **Checkout** here in the webhooks,
@@ -39,9 +41,10 @@ def process_stripe_event(event_id):
         # We could probably do it just as well on invoice.paid and if we ever move API-based subscription creation
         # in webhooks, we should do everything in invoice.paid for less duplicated code.
 
+        payload = json.loads(event.body)
         # Successful checkout session
         if event.type == "checkout.session.completed":
-            data_object = event.payload["data"]["object"]
+            data_object = payload["data"]["object"]
             session = stripe.checkout.Session.retrieve(
                 data_object["id"],
                 expand=[
@@ -103,7 +106,7 @@ def process_stripe_event(event_id):
 
         # Successful renewal webhook
         elif event.type == "invoice.paid":
-            invoice = event.payload["data"]["object"]
+            invoice = payload["data"]["object"]
 
             # billing_reason=subscription_cycle means its a renewal, not a new subscription.
             # See https://stackoverflow.com/questions/22601521/stripe-webhook-events-renewal-of-subscription
@@ -131,7 +134,7 @@ def process_stripe_event(event_id):
             event.type == "customer.subscription.updated"
             or event.type == "customer.subscription.deleted"
         ):
-            subscription = event.payload["data"]["object"]
+            subscription = payload["data"]["object"]
             customer = models.Customer.objects.get(subscription_id=subscription["id"])
             if subscription["status"] == "past_due":
                 customer.payment_state = (
@@ -160,7 +163,7 @@ def process_stripe_event(event_id):
 
         # Payment method automatically updated by card network
         elif event.type == "payment_method.automatically_updated":
-            payment_method = event.payload["data"]["object"]
+            payment_method = payload["data"]["object"]
             customer = models.Customer.objects.get(
                 customer_id=payment_method["customer"]
             )

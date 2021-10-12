@@ -160,7 +160,6 @@ From time to time, you may want to delete all Stripe test data via the dashboard
 - Paid private plans, e.g., for grandfathering in pricing.
 - Deal with payments that require additional action. see https://stripe.com/docs/billing/subscriptions/webhooks#action-required
 - Customer payment history
-- Verify Stripe webhook signatures
 - Grace periods for expired payments
 - Trial periods
   - Note to self: if this eventually does trials, `free_default` plans are still useful because they're what happens when the trial expires or a paid plan expires.

@@ -234,6 +234,7 @@ BILLING_APPLICATION_NAME = "example"
 BILLING_CHECKOUT_SUCCESS_URL = "/accounts/profile/"
 BILLING_CHECKOUT_CANCEL_URL = "/accounts/profile/"
 BILLING_PORTAL_RETURN_URL = "/accounts/profile/"
+BILLING_STRIPE_WH_SECRET = env("BILLING_STRIPE_WH_SECRET", default=None)
 
 # Celery - Will only be used if you pip install celery
 # https://docs.celeryproject.org/en/stable/getting-started/brokers/redis.html
