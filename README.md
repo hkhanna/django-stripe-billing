@@ -40,7 +40,7 @@
    ...
    class UserAdmin(DefaultUserAdmin):
    ...
-       inlines = [billing.admin.CustomerAdminInline]
+       inlines = [billing.admin.CustomerAdminInline, billing.admin.StripeEventAdminInline]
    ```
 
 ## Configuration
@@ -173,7 +173,6 @@ From time to time, you may want to delete all Stripe test data via the dashboard
   - Note to self: if this eventually does trials, `free_default` plans are still useful because they're what happens when the trial expires or a paid plan expires.
 - Coupons for friends
 - "When a subscription changes to past_due, your webhook script could email you about the problem so you can reach out to the customer, or the script could email the customer directly, asking them to update their payment details." Although maybe we could rely on this: https://stripe.com/docs/billing/subscriptions/overview#emails
-- Inline admin of Stripe events for every User
 
 ## Architecture and Models
 

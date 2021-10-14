@@ -197,3 +197,17 @@ def test_webhook_create_subscription_mismatched_customer_id(
     assert (
         models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
     )
+
+
+def test_link_event_to_user(client, user, session):
+    url = reverse("billing_api:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": factories.id("sess")}},
+    }
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.user == user

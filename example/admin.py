@@ -31,4 +31,4 @@ class UserAdmin(DefaultUserAdmin):
     search_fields = ("email", "first_name", "last_name", "previous_emails")
     ordering = ("email",)
     filter_horizontal = ("groups", "user_permissions")
-    inlines = [billing.admin.CustomerAdminInline]
+    inlines = [billing.admin.CustomerAdminInline, billing.admin.StripeEventAdminInline]

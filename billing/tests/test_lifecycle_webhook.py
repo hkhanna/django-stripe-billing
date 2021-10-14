@@ -202,3 +202,27 @@ def test_past_due_miss_final_cancel(client, customer):
     with freeze_time(sixty_days_hence):
         customer.refresh_from_db()
         assert "free_default.past_due.requires_payment_method" == customer.state
+
+
+@pytest.mark.parametrize(
+    "type",
+    [
+        "invoice.paid",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    ],
+)
+def test_link_event_to_user(client, customer, type):
+    url = reverse("billing_api:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": type,
+        "data": {
+            "object": {"id": "sub", "subscription": "sub", "status": "notimportant"}
+        },
+    }
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.user == customer.user

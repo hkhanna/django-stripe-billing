@@ -334,6 +334,9 @@ class StripeEvent(models.Model):
     event_id = models.CharField(max_length=254)
     type = models.CharField(max_length=254)
     received_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     # body can't be a JSONField since Stripe webhook signature checking will fail
     body = models.TextField()

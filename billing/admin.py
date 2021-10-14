@@ -1,3 +1,5 @@
+from datetime import timedelta
+from django.utils import timezone
 from django.contrib import admin
 
 from . import models
@@ -30,3 +32,20 @@ class PlanAdmin(admin.ModelAdmin):
 @admin.register(models.StripeEvent)
 class StripeEventAdmin(admin.ModelAdmin):
     list_display = ["__str__", "status", "received_at"]
+
+
+class StripeEventAdminInline(admin.TabularInline):
+    model = models.StripeEvent
+    fields = ("type", "received_at", "event_id", "status")
+    readonly_fields = ("type", "received_at", "event_id", "status")
+    can_delete = False
+    show_change_link = True
+    ordering = ("-received_at",)
+
+    def get_queryset(self, request):
+        """Limit rows to past 180 days."""
+        qs = super().get_queryset(request)
+        return qs.filter(received_at__gte=timezone.now() - timedelta(days=180))
+
+    def has_add_permission(self, request, obj=None):
+        return False

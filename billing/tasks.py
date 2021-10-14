@@ -55,6 +55,8 @@ def process_stripe_event(event_id):
             )
             subscription = session.subscription
             user = User.objects.get(pk=session.client_reference_id)
+            # TODO move up
+            event.user = user
 
             # Get the Plan the Customer signed up for.
             price_id = session.line_items["data"][0]["price"]["id"]
@@ -107,15 +109,16 @@ def process_stripe_event(event_id):
         # Successful renewal webhook
         elif event.type == "invoice.paid":
             invoice = payload["data"]["object"]
+            customer = models.Customer.objects.get(
+                subscription_id=invoice["subscription"]
+            )
+            event.user = customer.user
 
             # billing_reason=subscription_cycle means its a renewal, not a new subscription.
             # See https://stackoverflow.com/questions/22601521/stripe-webhook-events-renewal-of-subscription
             if invoice["billing_reason"] == "subscription_cycle":
                 logger.info(
                     f"StripeEvent.id={event_id} StripeEvent.type=invoice.paid processing renewal since billing_reason=subscription_cycle"
-                )
-                customer = models.Customer.objects.get(
-                    subscription_id=invoice["subscription"]
                 )
                 period_end = dt.fromtimestamp(
                     invoice["lines"]["data"][0]["period"]["end"], tz=timezone.utc
@@ -137,6 +140,7 @@ def process_stripe_event(event_id):
         ):
             subscription = payload["data"]["object"]
             customer = models.Customer.objects.get(subscription_id=subscription["id"])
+            event.user = customer.user
             if subscription["status"] == "past_due":
                 customer.payment_state = (
                     models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
@@ -167,7 +171,7 @@ def process_stripe_event(event_id):
                     customer.save()
             else:
                 logger.info(
-                    f"StripeEvent.id={event_id} StripeEvent.type=customer.subscription.updated taking no action "
+                    f"StripeEvent.id={event_id} StripeEvent.type=customer.subscription.updated taking no action"
                 )
                 event.info = "Payload is not actionable. No action was taken."
             event.status = models.StripeEvent.Status.PROCESSED
@@ -178,6 +182,7 @@ def process_stripe_event(event_id):
             customer = models.Customer.objects.get(
                 customer_id=payment_method["customer"]
             )
+            event.user = customer.user
             cc_info = payment_method["card"]
             customer.cc_info = {
                 k: cc_info[k]
