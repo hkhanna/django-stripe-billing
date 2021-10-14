@@ -25,7 +25,7 @@ def customer(upcoming_period_end):
 
 def test_create_event(client):
     """Create event"""
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {"id": "evt_test", "object": "event", "type": "test"}
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
@@ -34,7 +34,7 @@ def test_create_event(client):
 
 def test_bad_json(client):
     """Malformed JSON"""
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = "bad json"
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 400
@@ -43,7 +43,7 @@ def test_bad_json(client):
 
 def test_unrecognized_type(client):
     """Unrecognized event type"""
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -61,7 +61,7 @@ def test_renewed(client, customer):
     """A renewal was successfully processed for the next billing cycle"""
     # https://stripe.com/docs/billing/subscriptions/webhooks#tracking
     # Listen to an invoice webhook
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     mock_period_end = timezone.now() + timedelta(days=30)
     payload = {
         "id": "evt_test",
@@ -92,7 +92,7 @@ def test_payment_failure(client, customer, upcoming_period_end):
     # https://stripe.com/docs/billing/subscriptions/webhooks#payment-failures
     # https://stripe.com/docs/billing/subscriptions/overview#build-your-own-handling-for-recurring-charge-failures
     # Listen to customer.subscription.updated. status=past_due
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -118,7 +118,7 @@ def test_payment_failure(client, customer, upcoming_period_end):
 def test_payment_failure_permanent(client, customer, upcoming_period_end):
     """Renewal payment has permanently failed"""
     # Listen to customer.subscription.updated. status=canceled
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -133,39 +133,6 @@ def test_payment_failure_permanent(client, customer, upcoming_period_end):
         models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
     )
     assert customer.current_period_end == upcoming_period_end
-    customer.refresh_from_db()
-    assert customer.payment_state == models.Customer.PaymentState.OFF
-    assert "free_default.new" == customer.state
-
-
-def test_incomplete_expired(client, customer):
-    """An initial payment failure not cured for 23 hours will cancel the subscription"""
-    # Listen to customer.subscription.updated. status=incomplete_expired
-
-    # The Customer has to be in the incomplete signup state.
-    customer.current_period_end = None
-    customer.payment_state = models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
-    customer.save()
-    assert "free_default.incomplete.requires_payment_method" == customer.state
-
-    url = reverse("billing_api:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.deleted",
-        "data": {
-            "object": {
-                "id": "sub",
-                "status": "incomplete_expired",
-                "cancel_at_period_end": False,
-            }
-        },
-    }
-    response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
     customer.refresh_from_db()
     assert customer.payment_state == models.Customer.PaymentState.OFF
     assert "free_default.new" == customer.state
@@ -190,8 +157,6 @@ def test_past_due_miss_final_cancel(client, customer):
     """User is past_due and then we miss the invoice.paid webhook or
     final Stripe cancelation webhook"""
     # This is not ideal. A missed webhook here will leave the user totally unable to subscribe.
-    # N.B. We can't test for the situation where a user is incomplete and then we miss the incomplete_expired webhook.
-    # It wouldn't be good. The user will be unable to subscribe.
     customer.payment_state = models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
     customer.save()
     assert "paid.past_due.requires_payment_method" == customer.state
@@ -202,7 +167,7 @@ def test_past_due_miss_final_cancel(client, customer):
 
 
 def test_link_event_to_user(client, customer):
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",

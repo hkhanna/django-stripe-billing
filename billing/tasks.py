@@ -129,17 +129,6 @@ def process_stripe_event(event_id, verify_signature=True):
         info = _preprocess_type_info(event, data_object)
         user, customer = _preprocess_user(event)
 
-        # N.B. re event types and subscription creation
-        # There are two things that may be a little confusing here.
-        # First, we handle initial subscription creation for **Checkout** here in the webhooks,
-        # but we don't handle subscription creation for API subscriptions here.
-        # There isn't a good reason for the difference. It's just that doing it in webhooks
-        # is the right paradigm for Checkout. For API it doesn't matter but we built it the other
-        # way first.
-        # Second, we capture the checkout.session.completed event because that's what the docs recommend.
-        # We could probably do it just as well on invoice.paid and if we ever move API-based subscription creation
-        # in webhooks, we should do everything in invoice.paid for less duplicated code.
-
         # Successful checkout session
         if event.type == EVENT_TYPE.NEW_SUB:
             session_id = info["session_id"]
@@ -192,13 +181,11 @@ def process_stripe_event(event_id, verify_signature=True):
             event.status = models.StripeEvent.Status.PROCESSED
 
         # Cancelation
-        # Note Cancelation not relevant for API usage.
         elif event.type == EVENT_TYPE.CANCEL_SUB:
             customer.payment_state = models.Customer.PaymentState.OFF
             event.status = models.StripeEvent.Status.PROCESSED
 
         # Reactivate a not-yet-canceled subscription
-        # Not relevant for API usage
         elif event.type == EVENT_TYPE.REACTIVATE_SUB:
             customer.payment_state = models.Customer.PaymentState.OK
             event.status = models.StripeEvent.Status.PROCESSED

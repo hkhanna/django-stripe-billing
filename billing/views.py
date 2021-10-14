@@ -1,3 +1,4 @@
+import json
 import logging
 from urllib.parse import urlparse
 from django.views.generic import View
@@ -7,9 +8,13 @@ from django.core.exceptions import ImproperlyConfigured
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.urls import reverse
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+
 import stripe
 
-from .. import models, settings, services
+from . import models, settings, services, tasks
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -23,6 +28,39 @@ for setting in ("CHECKOUT_SUCCESS_URL", "CHECKOUT_CANCEL_URL", "PORTAL_RETURN_UR
         raise ImproperlyConfigured(
             f"Checkout views need {missing} settings configured."
         )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def stripe_webhook_view(request):
+    try:
+        payload = json.loads(request.body)
+    except json.decoder.JSONDecodeError as e:
+        return JsonResponse({"detail": "Invalid payload"}, status=400)
+
+    if type(payload) != dict or "type" not in payload or "id" not in payload:
+        return JsonResponse({"detail": "Invalid payload"}, status=400)
+
+    headers = {}
+    for key in request.headers:
+        value = request.headers[key]
+        if isinstance(value, str):
+            headers[key] = value
+
+    event = models.StripeEvent.objects.create(
+        event_id=payload["id"],
+        payload_type=payload["type"],
+        body=request.body.decode("utf-8"),
+        headers=headers,
+        status=models.StripeEvent.Status.NEW,
+    )
+    logger.info(f"StripeEvent.id={event.id} StripeEvent.type={event.type} received")
+    if hasattr(tasks, "shared_task"):
+        tasks.process_stripe_event.delay(event.id)
+    else:
+        tasks.process_stripe_event(event.id)
+
+    return JsonResponse({"detail": "Created"}, status=201)
 
 
 class CreateCheckoutSessionView(LoginRequiredMixin, View):
@@ -51,7 +89,7 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
             messages.error(request, "User already has a subscription.")
             return redirect(settings.CHECKOUT_CANCEL_URL)
 
-        success_url = reverse("billing_checkout:checkout_success")
+        success_url = reverse("billing:checkout_success")
         success_url = f"{request.scheme}://{request.get_host()}{success_url}"
         success_url += "?session_id={CHECKOUT_SESSION_ID}"
 
@@ -129,7 +167,6 @@ class CreatePortalView(LoginRequiredMixin, View):
         customer = request.user.customer
         if customer.state not in (
             "free_default.past_due.requires_payment_method",
-            "free_default.incomplete.requires_payment_method",
             "paid.past_due.requires_payment_method",
             "paid.paying",
             "paid.will_cancel",

@@ -18,7 +18,7 @@ def user(upcoming_period_end):
 
 def test_portal_happy(auth_client, mock_stripe_billing_portal):
     """A Customer can create a Stripe Portal session"""
-    url = reverse("billing_checkout:create_portal_session")
+    url = reverse("billing:create_portal_session")
     response = auth_client.post(url)
     assert mock_stripe_billing_portal.Session.create.call_count == 1
     assert response.status_code == 302
@@ -34,7 +34,7 @@ def test_portal_wrong_state(auth_client, customer, mock_stripe_billing_portal):
     customer.save()
     assert customer.state == "free_default.new"
 
-    url = reverse("billing_checkout:create_portal_session")
+    url = reverse("billing:create_portal_session")
     response = auth_client.post(url)
     assert mock_stripe_billing_portal.Session.create.call_count == 0
     assert response.status_code == 302
@@ -56,7 +56,7 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
     # Step 2 - Stripe sends cancel at period end webhook, resulting
     # in the correct Customer state."""
 
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -95,7 +95,7 @@ def test_cancel_subscription_immediately(client, customer, mock_stripe_subscript
         customer.state == "paid.paying"
     )  # No change to state until we receive the webhook.
 
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -115,7 +115,7 @@ def test_reactivate_subscription(client, customer):
     customer.save()
     assert customer.state == "paid.will_cancel"
 
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",

@@ -23,7 +23,7 @@ def session(user, paid_plan, mock_stripe_checkout):
 def test_create_checkout_session_happy(auth_client, paid_plan, mock_stripe_checkout):
     """create_checkout_session creates a Stripe Session
     and redirects to the appropriate URL"""
-    url = reverse("billing_checkout:create_checkout_session")
+    url = reverse("billing:create_checkout_session")
     payload = {"plan_id": paid_plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.call_count == 1
@@ -35,7 +35,7 @@ def test_create_checkout_session_bad_plan_id(
     auth_client, paid_plan, mock_stripe_checkout
 ):
     """Bad plan id should cancel the checkout flow"""
-    url = reverse("billing_checkout:create_checkout_session")
+    url = reverse("billing:create_checkout_session")
     payload = {"plan_id": paid_plan.id + 1}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
@@ -47,7 +47,7 @@ def test_create_checkout_session_bad_plan_id(
     auth_client, paid_plan, mock_stripe_checkout
 ):
     """No plan id should cancel the checkout flow"""
-    url = reverse("billing_checkout:create_checkout_session")
+    url = reverse("billing:create_checkout_session")
     payload = {}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
@@ -60,7 +60,7 @@ def test_create_checkout_session_already_paid(
 ):
     """A User with an existing subscription may not access the create_checkout_session endpoint."""
     factories.set_customer_paying(user.customer)
-    url = reverse("billing_checkout:create_checkout_session")
+    url = reverse("billing:create_checkout_session")
     payload = {"plan_id": paid_plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
@@ -71,7 +71,7 @@ def test_create_checkout_session_already_paid(
 def test_nonpublic_plan(auth_client, mock_stripe_checkout):
     """Billing Plans that are not public cannot be accessed via Checkout"""
     plan = factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
-    url = reverse("billing_checkout:create_checkout_session")
+    url = reverse("billing:create_checkout_session")
     payload = {"plan_id": plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
@@ -84,7 +84,7 @@ def test_create_subscription_metadata(
     """Successful checkout session updates metadata on Stripe Customer"""
     mock_stripe_customer.retrieve.return_value.metadata = {}
     mock_stripe_customer.retrieve.return_value.email = user.email
-    url = reverse("billing_checkout:checkout_success")
+    url = reverse("billing:checkout_success")
     query_params = {"session_id": factories.id("sess")}
 
     with caplog.at_level("ERROR"):
@@ -108,7 +108,7 @@ def test_create_subscription_bad_metadata(
         "user_pk": "bad",
         "application": application,
     }
-    url = reverse("billing_checkout:checkout_success")
+    url = reverse("billing:checkout_success")
     query_params = {"session_id": factories.id("sess")}
 
     with caplog.at_level("ERROR"):
@@ -127,7 +127,7 @@ def test_create_subscription_changed_email(
     """If a User changes their email during the Checkout process, revert it."""
     mock_stripe_customer.retrieve.return_value.metadata = {}
     mock_stripe_customer.retrieve.return_value.email = "new@example.com"
-    url = reverse("billing_checkout:checkout_success")
+    url = reverse("billing:checkout_success")
     query_params = {"session_id": factories.id("sess")}
 
     with caplog.at_level("ERROR"):
@@ -144,7 +144,7 @@ def test_webhook_create_subscription(
 ):
     """checkout.session.completed should set the customer_id, plan, current_period_end,
     payment_state and card_info"""
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
@@ -180,7 +180,7 @@ def test_webhook_create_subscription_mismatched_customer_id(
     client, user, session, mock_stripe_checkout
 ):
     """A mismatched customer_id returned from the Session should log an error and update the User's customer_id."""
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     user.customer.customer_id = "cus_mismatch"
     user.customer.save()
     payload = {
@@ -206,7 +206,7 @@ def test_webhook_create_subscription_mismatched_customer_id(
 
 
 def test_link_event_to_user(client, user, session):
-    url = reverse("billing_api:stripe_webhook")
+    url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",

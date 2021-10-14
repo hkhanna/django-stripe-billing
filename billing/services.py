@@ -1,10 +1,8 @@
 import logging
-from datetime import timedelta
 from unittest import mock
 
 import stripe
-from django.utils import timezone
-from . import settings, models
+from . import settings
 
 stripe.api_key = settings.STRIPE_API_KEY
 
@@ -55,64 +53,12 @@ def stripe_customer_sync_metadata_email(user, stripe_customer_id):
         stripe_modify_customer(user, **customer_update)
 
 
-def stripe_create_customer(user):
-    if settings.STRIPE_API_KEY == "mock":
-        from . import factories
-
-        return mock.MagicMock(id=factories.id("cus"))
-
-    try:
-        # Create a new customer object
-        customer = stripe.Customer.create(
-            name=user.name,
-            email=user.email,
-            metadata={"user_pk": user.pk, "application": settings.APPLICATION_NAME},
-        )
-        return customer
-
-    except Exception as e:
-        logger.exception("Error creating Stripe customer")
-        return None
-
-
 def stripe_modify_customer(user, **kwargs):
     if settings.STRIPE_API_KEY == "mock":
         return mock.MagicMock(id=user.customer.customer_id)
 
     customer = stripe.Customer.modify(user.customer.customer_id, **kwargs)
     return customer
-
-
-def stripe_create_subscription(customer_id, payment_method_id, price_id):
-    if settings.STRIPE_API_KEY == "mock":
-        from . import factories
-
-        return mock.MagicMock(
-            id=factories.id("sub"),
-            status="active",
-            current_period_end=(timezone.now() + timedelta(days=30)).timestamp(),
-        )
-
-    # From https://stripe.com/docs/billing/subscriptions/fixed-price#collect-payment
-    stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
-    subscription = stripe.Subscription.create(
-        customer=customer_id,
-        items=[{"price": price_id}],
-        expand=["latest_invoice.payment_intent"],
-        default_payment_method=payment_method_id,
-    )
-
-    return subscription
-
-
-def stripe_replace_card(customer_id, subscription_id, payment_method_id):
-    if settings.STRIPE_API_KEY == "mock":
-        return
-
-    stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
-    stripe.Subscription.modify(
-        subscription_id, default_payment_method=payment_method_id
-    )
 
 
 def stripe_retry_latest_invoice(customer_id):
@@ -165,14 +111,6 @@ def stripe_cancel_subscription(subscription_id, immediate=False):
         return stripe.Subscription.delete(subscription_id)
     else:
         return stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
-
-
-def stripe_reactivate_subscription(subscription_id):
-    if settings.STRIPE_API_KEY == "mock":
-        return None
-
-    # https://stripe.com/docs/billing/subscriptions/cancel#reactivating-canceled-subscriptions
-    return stripe.Subscription.modify(subscription_id, cancel_at_period_end=False)
 
 
 def stripe_check_webhook_signature(event):

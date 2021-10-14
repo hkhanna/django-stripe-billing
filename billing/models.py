@@ -176,7 +176,6 @@ class Customer(models.Model):
         ):
             # There's a paid or free private plan, but it's expired, and there's no more payments coming.
             # This will only happen if we miss the final cancelation webhook or reactivation webhook.
-            # A missing incomplete_expired webhook shows up differently (see below).
             # This will present as a canceled subscription.
             return "free_default.canceled.missed_webhook"
 
@@ -234,16 +233,6 @@ class Customer(models.Model):
         if (
             self.plan.type == Plan.Type.PAID_PUBLIC
             and self.payment_state == Customer.PaymentState.REQUIRES_PAYMENT_METHOD
-            and self.current_period_end is None
-            and self.subscription_id is not None
-        ):
-            # There's a plan, but payment is required. The current_period_end is None, which means
-            # means that it is an initial attempt to sign up that failed and not a past_due situation.
-            return "free_default.incomplete.requires_payment_method"
-
-        if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
-            and self.payment_state == Customer.PaymentState.REQUIRES_PAYMENT_METHOD
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
             and self.subscription_id is not None
@@ -251,8 +240,6 @@ class Customer(models.Model):
             # There's a plan, but payment is required. The current_period_end is set in the past, which
             # means that Stripe is still retrying payment and its a past_due situation, but the application
             # is going to treat the subscription as expired since current_period_end has lapsed.
-            # This is also how it will show up if we miss the incomplete_expired webhook.
-            # which would be a little weird. The user would basically be unable to subscribe.
             return "free_default.past_due.requires_payment_method"
 
         if (

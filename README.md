@@ -15,22 +15,14 @@
        INSTALLED_APPS = [
            ...
            'billing',
+           ...
        ]
    ```
 1. Include the billing URLconf in your project urls.py like this:
 
    ```
        path('billing/', include('billing.urls.checkout')),  # namespace is billing_checkout
-       ... OR ...
-       path('billing/', include('billing.urls.api')),  # namespace is billing_api
    ```
-1. You can use both checkout and API functionality if you wish.
-
-   ```
-       path('billing/', include('billing.urls.checkout')),
-       path('billing/', include('billing.urls.api'))
-   ```
-1. If you are using the `billing.urls.api` views, you must have Django REST Framework installed.
 1. Set the [configuration variables](#configuration).
 1. Run `python manage.py migrate` to create the billing models.
 1. Run `python manage.py billing_init`, which will create Customer objects for existing Users. If you don't do this, you may run into errors.
@@ -47,18 +39,16 @@
 
 - `BILLING_STRIPE_API_KEY`: The Stripe API key.
   - **Required**
-  - If only using the API, you may use the word "mock" for a mocked Stripe client.
-  - You can also use a test Stripe API key. You must use a real test Stripe API key if using Stripe Checkout / Portal.
+  - You may use the word "mock" for a mocked Stripe client. You can't use Checkout/Portal, but any function that calls out to stripe will just call a mock.
+  - You must use a real test Stripe API key if using Stripe Checkout / Portal.
   - Obviously, only use a live environment Stripe API key in production.
 - `BILLING_APPLICATION_NAME`: The name of the application.
   - **Required**
   - The Stripe customer metadata will store this in the `application` key.
 - `BILLING_CHECKOUT_SUCCESS_URL`
-  - Required only if you use the Stripe Checkout views.
   - This view should parse Django messages.
   - Must be an absolute URL or begin with a `/`.
 - `BILLING_CHECKOUT_CANCEL_URL`
-  - Required only if you use the Stripe Checkout views.
   - This view should parse Django messages.
   - Must be an absolute URL or begin with a `/`.
 
@@ -71,7 +61,7 @@
 1. `python3 manage.py createsuperuser`
 1. `python3 manage.py runserver`
 1. OPTIONAL: Use celery for webhook processing: `pip install celery`. If you don't install celery, it will process webhooks synchronously.
-1. If you are going to run the non-API Stripe Checkout and Checkout Portal flow, you need to set `BILLING_STRIPE_API_KEY` and setup a Paid plan in the admin with
+1. If you are going to run the Stripe Checkout and Checkout Portal flow, you need to set `BILLING_STRIPE_API_KEY` and setup a Paid plan in the admin with
    a Stripe `price_id` from the real Stripe testing environment.
 
 ### Simulating Webhooks
@@ -123,20 +113,6 @@
 - `POST` to `billing:create_portal_session` to create a Stripe Billing Portal Session.
 - Look at the example app for more details on how to use it.
 
-### API Usage
-
-- `billing.serializers.CustomerSerializer` is available for returning Customer information. You can use it as a nested serializer in your User serializer.
-  - E.g., `customer = billing.serializers.CustomerSerializer(read_only=True)`
-
-#### Available API endpoints
-
-- `/billing/create-subscription/`
-- `/billing/cure-failed-card/`
-- `/billing/cancel-subscription/`
-- `/billing/reactivate-subscription/`
-- `/billing/replace-card/`
-- `/billing/stripe/webhook/`
-
 ### Conveniences
 
 This package includes factories and serializers for use. Documentation to come!
@@ -150,16 +126,13 @@ This package includes factories and serializers for use. Documentation to come!
 - A user with a free private (i.e. staff) plan that has expired will drop to the limits set in the free_default plan. A user with a free private plan where there
   is no current_period_end set will be treated as NO expiration date on the plan and will continue to enjoy the free private plan indefinitely.
 
-
 ## Development Stripe Notes
 
 Generally, you won't need to use a real test environment `BILLING_STRIPE_API_KEY` during local development. If `BILLING_STRIPE_API_KEY=mock`, the application will be careful not to interface with Stripe and instead mock all of its responses.
 
 But when testing, you may not want to use the `mock` sentinel since it may be difficult to introspect interactions with the Stripe library. Instead, you may just want to use `unittest.patch` like normal.
 
-You can, of course, set the `BILLING_STRIPE_API_KEY` variable to a real test environment key and it will interact with the Stripe testing environment. If you do this, you should create a RK by hand in the Stripe test environment console and use that.
-
-## Deleting Test Data
+You can, of course, set the `BILLING_STRIPE_API_KEY` variable to a real test environment key and it will interact with the Stripe testing environment. If you do this, you should create a RK by hand in the Stripe test environment console and use that.# Deleting Test Data
 
 From time to time, you may want to delete all Stripe test data via the dashboard. If you do that, your API keys should remain the same and won't need to be updated. But you will need to create a product and price in the Stripe dashboard and update any paid `Plan` instances to reflect the new `price_ids`.
 
@@ -209,7 +182,7 @@ Practically speaking, the real reason `Limits` have defaults is because there is
 
 There must always be one and only one `free_default Plan`. It's created in a data migration and this condition is enforced via a database constraint.
 
-A `paid_public` plan is subscribable via the API. The others are not.
+A `paid_public` plan is subscribable by users. The others are not.
 
 ### Customer Model
 
@@ -225,7 +198,8 @@ For paid `Plans`, things are a little more complicated. Before we dive into it, 
 
 Stripe's Subscription model can have a `status` of: `incomplete`, `incomplete_expired`, `active`, `past_due`, `canceled`, `trialing`, or `unpaid`.
 
-`incomplete` means a Customer's credit card was attached to them and a subscription was created but the card was declined. The Customer has 23 hours to fix it and if they don't, the subscription gets `incomplete_expired` which is functionally the same as `canceled`. I.e., no invoices will be created or paid in those states.
+`incomplete` means a Customer's credit card was attached to them and a subscription was created but the card was declined. The Customer has 23 hours to fix it and if they don't, the subscription gets `incomplete_expired` which is functionally the same as `canceled`. I.e., no invoices will be created or paid in those states. We don't use this because we just ignore incomplete subscriptions and let them expire. A user creates a fresh one
+in the Checkout if they come back.
 
 `past_due` occurs when a recurring payment fails. The payment is retried according to settings in the Stripe dashboard. Once Stripe gives up, the status changes to `canceled`.
 
