@@ -17,24 +17,21 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     @staticmethod
     def state_note(customer):
         """Convenience to avoid doing lots of logic in the template"""
-        # TODO: on soft delete, clear some of this out of Customer
         # Maybe delete the Subscription immediately rather than at the end of the period.
         if customer.state == "free_default.new":
             return ""
-        elif customer.state == "free_default.canceled":
-            return f"Subscription expired on {customer.current_period_end}"
-        elif customer.state == "free_default.canceled.incomplete":
-            return ""
+        elif customer.state == "free_default.canceled.missed_webhook":
+            return "There is an issue with your subscription. Please contact support."
         elif customer.state == "paid.paying":
             return f"Subscription renews on {customer.current_period_end}."
         elif customer.state == "paid.will_cancel":
             return f"Subscription cancelled. Access available until {customer.current_period_end}."
-        elif customer.state == "paid.canceled":
-            return f"Subscription will expire on {customer.current_period_end}."
         elif customer.state == "free_private.indefinite":
             return f"Staff plan, no expiration."
         elif customer.state == "free_private.will_expire":
             return f"Staff plan expires on {customer.current_period_end}."
+        elif customer.state == "free_private.expired":
+            return f"Subscription expired on {customer.current_period_end}"
         elif customer.state in (
             "free_default.past_due.requires_payment_method",
             "free_default.incomplete.requires_payment_method",
@@ -51,9 +48,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
 
         if state in (
             "free_default.new",
-            "free_default.canceled",
-            "free_default.canceled.incomplete",
-            "paid.canceled",
+            "free_private.expired",
         ):
             ctx["url"] = "billing_checkout:create_checkout_session"
             ctx["plan_id"] = (
@@ -71,6 +66,9 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         elif state == "paid.will_cancel":
             ctx["url"] = "billing_checkout:create_portal_session"
             ctx["button_text"] = "Reactivate Subscription"
+        elif state == "free_default.canceled.missed_webhook":
+            ctx["url"] = "profile"
+            ctx["button_text"] = "There is a problem with your subscription."
         ctx["state_note"] = self.state_note(customer)
         ctx[
             "current_plan"

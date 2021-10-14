@@ -2,6 +2,7 @@
 some action in Checkout or Portal are found elsewhere."""
 
 from datetime import timedelta
+from freezegun import freeze_time
 
 import pytest
 from django.utils import timezone
@@ -122,16 +123,7 @@ def test_payment_failure_permanent(client, customer, upcoming_period_end):
     assert customer.current_period_end == upcoming_period_end
     customer.refresh_from_db()
     assert customer.payment_state == models.Customer.PaymentState.OFF
-
-    # Since the subscription doesn't expire for a couple days, it will be in a paid.canceled state.
-    assert "paid.canceled" == customer.state
-
-    # If the current_period_end is in the past, it should be in a free_default.canceled state.
-    customer.current_period_end = factories.fake.past_datetime(
-        "-1d", tzinfo=timezone.utc
-    )
-    customer.save()
-    assert "free_default.canceled" == customer.state
+    assert "free_default.new" == customer.state
 
 
 def test_incomplete_expired(client, customer):
@@ -158,7 +150,7 @@ def test_incomplete_expired(client, customer):
     )
     customer.refresh_from_db()
     assert customer.payment_state == models.Customer.PaymentState.OFF
-    assert "free_default.canceled.incomplete" == customer.state
+    assert "free_default.new" == customer.state
 
 
 def test_payment_method_automatically_updated(client, customer):
@@ -182,3 +174,31 @@ def test_payment_method_automatically_updated(client, customer):
     assert customer.payment_state == models.Customer.PaymentState.OK
     assert new_card == customer.cc_info
     assert "paid.paying" == customer.state
+
+
+def test_cancel_miss_final_cancel(client, customer):
+    """User cancels and then we miss the final Stripe subscription cancelation
+    webhook or the reactivation webhook."""
+    customer.cancel_subscription(immediate=False, notify_stripe=True)
+    customer.refresh_from_db()
+    assert "paid.will_cancel" == customer.state
+
+    sixty_days_hence = timezone.now() + timedelta(days=60)
+    with freeze_time(sixty_days_hence):
+        customer.refresh_from_db()
+        assert "free_default.canceled.missed_webhook" == customer.state
+
+
+def test_past_due_miss_final_cancel(client, customer):
+    """User is past_due and then we miss the invoice.paid webhook or
+    final Stripe cancelation webhook"""
+    # This is not ideal. A missed webhook here will leave the user totally unable to subscribe.
+    # N.B. We can't test for the situation where a user is incomplete and then we miss the incomplete_expired webhook.
+    # It wouldn't be good. The user will be unable to subscribe.
+    customer.payment_state = models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
+    customer.save()
+    assert "paid.past_due.requires_payment_method" == customer.state
+    sixty_days_hence = timezone.now() + timedelta(days=60)
+    with freeze_time(sixty_days_hence):
+        customer.refresh_from_db()
+        assert "free_default.past_due.requires_payment_method" == customer.state

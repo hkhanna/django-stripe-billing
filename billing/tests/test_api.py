@@ -105,7 +105,8 @@ class CustomerSerializerAPITest(APITestCase):
         )
 
     def test_customer_paying_expired_serializer(self, *args):
-        """Paying customer serializer with expired current_period_end should return free_default information"""
+        """Paying customer serializer with expired current_period_end (we missed a webhook)
+        should return free_default information"""
         user = factories.UserFactory(
             paying=True,
             customer__payment_state=models.Customer.PaymentState.OFF,
@@ -133,7 +134,7 @@ class CustomerSerializerAPITest(APITestCase):
                 ),
                 "payment_state": models.Customer.PaymentState.OFF,
                 "cc_info": user.customer.cc_info,
-                "state": "free_default.canceled",
+                "state": "free_default.canceled.missed_webhook",
                 "plan": {
                     "name": free_default_plan.name,
                     "display_price": free_default_plan.display_price,
@@ -218,7 +219,7 @@ class CustomerSerializerAPITest(APITestCase):
                 ),
                 "payment_state": models.Customer.PaymentState.OFF,
                 "cc_info": None,
-                "state": "free_default.canceled",
+                "state": "free_private.expired",
                 "plan": {
                     "name": free_default_plan.name,
                     "display_price": free_default_plan.display_price,
@@ -527,10 +528,12 @@ class SubscriptionAPITest(APITestCase):
 
         url = reverse("billing_api:reactivate-subscription")
 
-        # First, the sub is already canceled
+        # First, the sub is already canceled but we missed the webhook
         self.user.customer.current_period_end = timezone.now() - timedelta(days=10)
         self.user.customer.save()
-        self.assertEqual("free_default.canceled", self.user.customer.state)
+        self.assertEqual(
+            "free_default.canceled.missed_webhook", self.user.customer.state
+        )
         response = self.client.post(url)
         self.assertEqual(400, response.status_code)
 
@@ -553,49 +556,6 @@ class SubscriptionAPITest(APITestCase):
         self.assertEqual("free_default.new", self.user.customer.state)
         response = self.client.post(url)
         self.assertEqual(400, response.status_code)
-
-    def test_reactivate_canceled_subscription(self, *args):
-        """Reactivating a subscription that was canceled and whose billing cycle expired creates a fresh subscription"""
-        self.user = factories.UserFactory(
-            paying=True,
-            customer__current_period_end=timezone.now() - timedelta(days=10),
-            customer__payment_state=models.Customer.PaymentState.OFF,
-        )
-        self.client.force_login(self.user)
-        plan_id = self.user.customer.plan_id
-
-        mock_current_period_end = timezone.now() + timedelta(days=30)
-        new_cc_info = {
-            "brand": "visa",
-            "last4": "1111",
-            "exp_month": 11,
-            "exp_year": 2017,
-        }
-        args[0].Subscription.create.return_value = mock.MagicMock(
-            **{
-                "id": "new_sub",
-                "status": "active",
-                "current_period_end": mock_current_period_end.timestamp(),
-            }
-        )
-        args[0].PaymentMethod.attach.return_value.card = new_cc_info
-        url = reverse("billing_api:create-subscription")
-        payload = {"payment_method_id": "abc", "plan_id": plan_id}
-        response = self.client.post(url, payload)
-        self.assertEqual(201, response.status_code)
-        args[0].Subscription.create.assert_called_once()
-        self.user.refresh_from_db()
-        self.assertEqual(plan_id, self.user.customer.plan_id)
-        self.assertEqual(
-            models.Customer.PaymentState.OK, self.user.customer.payment_state
-        )
-        self.assertEqual("new_sub", self.user.customer.subscription_id)
-        self.assertEqual(
-            mock_current_period_end.timestamp(),
-            self.user.customer.current_period_end.timestamp(),
-        )
-        self.assertJSONEqual(json.dumps(self.user.customer.cc_info), new_cc_info)
-        self.assertEqual("paid.paying", self.user.customer.state)
 
     def test_replace_card(self, *args):
         """Replace a credit card for an active subscription"""

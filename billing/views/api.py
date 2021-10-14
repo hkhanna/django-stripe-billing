@@ -120,13 +120,12 @@ class CancelSubscriptionAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        if request.user.customer.payment_state == models.Customer.PaymentState.OFF:
+        if not request.user.customer.cancel_subscription(
+            immediate=False, notify_stripe=True
+        ):
             raise ValidationError("No active subscription to cancel.")
-
-        services.stripe_cancel_subscription(request.user.customer.subscription_id)
-        request.user.customer.payment_state = models.Customer.PaymentState.OFF
-        request.user.customer.save()
-        return Response(status=201)
+        else:
+            return Response(status=201)
 
 
 class ReactivateSubscriptionAPIView(APIView):

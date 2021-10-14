@@ -41,7 +41,10 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
         # User must not have an active billing plan
         # If a user is trying to switch between paid plans, this is the wrong endpoint.
         customer = request.user.customer
-        if customer.state not in ("free_default.new", "free_default.canceled"):
+        if customer.state not in (
+            "free_default.new",
+            "free_private.expired",
+        ):
             logger.error(
                 f"User.id={request.user.id} attempted to create a checkout session while having an active billing plan."
             )

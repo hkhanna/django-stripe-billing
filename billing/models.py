@@ -5,6 +5,8 @@ from django.db.models import CheckConstraint, Q, UniqueConstraint
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
+from . import services
+
 logger = logging.getLogger(__name__)
 
 
@@ -145,6 +147,28 @@ class Customer(models.Model):
         max_length=128, default=PaymentState.OFF, choices=PaymentState.choices
     )
 
+    def cancel_subscription(self, immediate, notify_stripe):
+        if self.payment_state == Customer.PaymentState.OFF:
+            # This could happen if a user cancels their sub and then deletes their account.
+            logger.warning(
+                f"User.id={self.user.id} does not have an active subscription to cancel."
+            )
+            return False
+
+        logger.info(
+            f"User.id={self.user.id} canceling subscription_id {self.subscription_id}"
+        )
+        self.payment_state = Customer.PaymentState.OFF
+        if immediate:
+            # Downgrade to free_default.new
+            self.plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
+            self.current_period_end = None
+            self.subscription_id = None
+        if notify_stripe:
+            services.stripe_cancel_subscription(self.subscription_id, not immediate)
+        self.save()
+        return True
+
     @property
     def state(self):
         if (
@@ -157,23 +181,16 @@ class Customer(models.Model):
 
         if (
             self.plan.type != Plan.Type.FREE_DEFAULT
+            and self.payment_state == Customer.PaymentState.OFF
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
-            and self.payment_state == Customer.PaymentState.OFF
+            and self.subscription_id is not None
         ):
             # There's a paid or free private plan, but it's expired, and there's no more payments coming.
-            # We don't check the None-ness of subscription_id because, although it should always be None,
-            # if somehow we miss a webhook, this will allow the plan to be treated as expired rather than errored.
-            return "free_default.canceled"
-
-        if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
-            and self.current_period_end is None
-            and self.payment_state == Customer.PaymentState.OFF
-        ):
-            # When a Customer signs up for a paid plan, payment method fails, then the subscription expires after 23 hours,
-            # We can't use free_default.canceled because current_period_end is None.
-            return "free_default.canceled.incomplete"
+            # This will only happen if we miss the final cancelation webhook or reactivation webhook.
+            # A missing incomplete_expired webhook shows up differently (see below).
+            # This will present as a canceled subscription.
+            return "free_default.canceled.missed_webhook"
 
         if (
             self.plan.type == Plan.Type.PAID_PUBLIC
@@ -197,20 +214,6 @@ class Customer(models.Model):
             return "paid.will_cancel"
 
         if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
-            and self.current_period_end is not None
-            and self.current_period_end > timezone.now()
-            and self.payment_state == Customer.PaymentState.OFF
-            and self.subscription_id is None
-        ):
-            # There's a paid plan, it's not expired, but there's no more payments coming, and the Stripe subscription
-            # is canceled and cannot be reactivated.
-            # I don't think this state happens in practice. If it does, it will be for a few seconds because current_period_end is a little bit ahead
-            # of when Stripe sends the canceled webhook. The frontend should require a fresh signup and we
-            # won't worry about the little bit of paid time potentially lost by the customer if they sign up again.
-            return "paid.canceled"
-
-        if (
             self.plan.type == Plan.Type.FREE_PRIVATE
             and self.current_period_end is None
             and self.payment_state == Customer.PaymentState.OFF
@@ -227,8 +230,18 @@ class Customer(models.Model):
             and self.subscription_id is None
         ):
             # Free private plan with an expiration date in the future.
-            # An expiration date in the past yields free_default.canceled.
+            # An expiration date in the past yields free_private.expired.
             return "free_private.will_expire"
+
+        if (
+            self.plan.type == Plan.Type.FREE_PRIVATE
+            and self.current_period_end is not None
+            and self.current_period_end < timezone.now()
+            and self.payment_state == Customer.PaymentState.OFF
+            and self.subscription_id is None
+        ):
+            # Free private plan with an expiration date in the past.
+            return "free_private.expired"
 
         if (
             self.plan.type == Plan.Type.PAID_PUBLIC
@@ -250,6 +263,8 @@ class Customer(models.Model):
             # There's a plan, but payment is required. The current_period_end is set in the past, which
             # means that Stripe is still retrying payment and its a past_due situation, but the application
             # is going to treat the subscription as expired since current_period_end has lapsed.
+            # This is also how it will show up if we miss the incomplete_expired webhook.
+            # which would be a little weird. The user would basically be unable to subscribe.
             return "free_default.past_due.requires_payment_method"
 
         if (

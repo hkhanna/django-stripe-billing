@@ -4,7 +4,7 @@ from unittest import mock
 
 import stripe
 from django.utils import timezone
-from . import settings
+from . import settings, models
 
 stripe.api_key = settings.STRIPE_API_KEY
 
@@ -166,12 +166,14 @@ def stripe_retry_latest_invoice(customer_id):
     return invoice
 
 
-def stripe_cancel_subscription(subscription_id):
+def stripe_cancel_subscription(subscription_id, at_period_end=True):
     if settings.STRIPE_API_KEY == "mock":
         return None
 
     # From https://stripe.com/docs/billing/subscriptions/cancel#canceling
-    return stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
+    return stripe.Subscription.modify(
+        subscription_id, cancel_at_period_end=at_period_end
+    )
 
 
 def stripe_reactivate_subscription(subscription_id):

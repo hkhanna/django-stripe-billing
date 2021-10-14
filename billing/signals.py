@@ -33,22 +33,29 @@ def user_post_save_signal(sender, instance, **kwargs):
             defaults={"name": "Default (Free)", "display_price": 0},
         )
         models.Customer.objects.create(user=instance, plan=default_plan)
-    if (
-        not instance.is_active
-        and instance.customer.payment_state == models.Customer.PaymentState.OK
-    ):
-        # Cancel Stripe subscription if the user is being soft deleted.
-        services.stripe_cancel_subscription(instance.customer.subscription_id)
-        instance.customer.payment_state = models.Customer.PaymentState.OFF
+    if not instance.is_active and instance.customer.state != "free_default.new":
+        # Cancel Stripe subscription immediately if the user is being soft deleted.
+        # Clears all Customer-related info (other than Stripe customer_id)
+        # Only notify Stripe if Stripe has an active subscription.
+        notify_stripe = (
+            instance.customer.payment_state != models.Customer.PaymentState.OFF
+        )
+        instance.customer.cancel_subscription(
+            immediate=True, notify_stripe=notify_stripe
+        )
     instance.customer.save()
 
 
 @receiver(pre_delete, sender=settings.AUTH_USER_MODEL)
 def user_hard_delete_signal(sender, instance, **kwargs):
     """Cancel Stripe subscription, if any, when a User is hard deleted."""
-    if (
-        hasattr(instance, "customer")
-        and instance.customer.payment_state == models.Customer.PaymentState.OK
-    ):
-        # Cancel the Stripe subscription if the user is being hard deleted
-        services.stripe_cancel_subscription(instance.customer.subscription_id)
+    if hasattr(instance, "customer") and instance.customer.state != "free_default.new":
+        # Cancel Stripe subscription immediately if the user is being soft deleted.
+        # Clears all Customer-related info (other than Stripe customer_id)
+        # Only notify Stripe if Stripe has an active subscription.
+        notify_stripe = (
+            instance.customer.payment_state != models.Customer.PaymentState.OFF
+        )
+        instance.customer.cancel_subscription(
+            immediate=True, notify_stripe=notify_stripe
+        )

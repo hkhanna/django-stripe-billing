@@ -142,30 +142,27 @@ def process_stripe_event(event_id):
                     models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
                 )
                 customer.save()
-            elif subscription["status"] == "canceled":
-                customer.subscription_id = None
-                customer.payment_state = models.Customer.PaymentState.OFF
-                customer.save()
             elif subscription["status"] == "incomplete_expired":
                 if customer.state != "free_default.incomplete.requires_payment_method":
                     logger.error(
                         f"StripeEvent.id={event_id} receiving incomplete_expired on a Customer that does not have the proper state."
                     )
-                customer.subscription_id = None
-                customer.payment_state = models.Customer.PaymentState.OFF
-                customer.save()
+                customer.cancel_subscription(immediate=True, notify_stripe=False)
+            elif subscription["status"] == "canceled":
+                # Final cancelation - either past_due or user canceled
+                customer.cancel_subscription(immediate=True, notify_stripe=False)
             # Cancelation
             elif (
                 subscription["status"] == "active"
                 and subscription["cancel_at_period_end"] is True
             ):
-                customer.payment_state = models.Customer.PaymentState.OFF
-                customer.save()
+                customer.cancel_subscription(immediate=False, notify_stripe=False)
             # Reactivation
             elif (
                 subscription["status"] == "active"
                 and subscription["cancel_at_period_end"] is False
             ):
+                # TODO: validation check so Customer doesn't go invalid
                 customer.payment_state = models.Customer.PaymentState.OK
                 customer.save()
             else:
