@@ -1,8 +1,12 @@
 from datetime import timedelta
+import json
 from django.utils import timezone
 from django.contrib import admin
+from django.urls import path, reverse
+from django.shortcuts import get_object_or_404, redirect
+from django.utils.html import format_html
 
-from . import models
+from . import models, tasks
 
 
 class CustomerAdminInline(admin.StackedInline):
@@ -32,7 +36,53 @@ class PlanAdmin(admin.ModelAdmin):
 @admin.register(models.StripeEvent)
 class StripeEventAdmin(admin.ModelAdmin):
     list_select_related = ["user"]
-    list_display = ["__str__", "payload_type", "user", "status", "received_at"]
+    list_display = [
+        "__str__",
+        "payload_type",
+        "user",
+        "status",
+        "received_at",
+        "event_actions",
+    ]
+    list_filter = ["type", "status"]
+    search_fields = ["user__email", "payload_type", "type"]
+
+    @admin.display(description="Actions")
+    def event_actions(self, obj):
+        return format_html(
+            "<a class='button' href='{}'>Replay</a>",
+            reverse("admin:replay_event", args=[obj.pk]),
+        )
+
+    def replay_event(self, request, pk):
+        obj = get_object_or_404(models.StripeEvent, pk=pk)
+        payload = json.loads(obj.body)
+        event = models.StripeEvent.objects.create(
+            event_id=obj.event_id,
+            payload_type=payload["type"],
+            headers=obj.headers,
+            body=obj.body,
+            status=models.StripeEvent.Status.NEW,
+            note=f"Replay of event pk {obj.id}",
+        )
+        if hasattr(tasks, "shared_task"):
+            tasks.process_stripe_event.apply(event.id, verify_signature=False)
+        else:
+            tasks.process_stripe_event(event.id, verify_signature=False)
+
+        self.message_user(request, "Event replayed successfully.")
+        return redirect("admin:billing_stripeevent_changelist")
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<pk>/replay",
+                self.admin_site.admin_view(self.replay_event),
+                name="replay_event",
+            )
+        ]
+        return custom_urls + urls
 
 
 class StripeEventAdminInline(admin.TabularInline):

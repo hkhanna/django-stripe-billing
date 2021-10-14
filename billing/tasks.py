@@ -121,7 +121,7 @@ def _preprocess_user(event):
     return event.user, customer
 
 
-def process_stripe_event(event_id):
+def process_stripe_event(event_id, verify_signature=True):
     """Handler for Stripe Events"""
     logger.info(f"StripeEvent.id={event_id} process_stripe_event task started")
     event = models.StripeEvent.objects.get(pk=event_id)
@@ -130,7 +130,7 @@ def process_stripe_event(event_id):
         event.status = models.StripeEvent.Status.PENDING
         event.save()
 
-        if settings.STRIPE_WH_SECRET:
+        if verify_signature and settings.STRIPE_WH_SECRET:
             services.stripe_check_webhook_signature(event)
 
         data_object = _preprocess_payload_type(event)
