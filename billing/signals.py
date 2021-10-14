@@ -5,6 +5,13 @@ from django.db.models.signals import pre_save, post_save, pre_delete
 
 from . import models, services
 
+CANCELABLE_STATES = (
+    "paid.paying",
+    "paid.will_cancel",
+    "free_default.past_due.requires_payment_method",
+    "paid.past_due.requires_payment_method",
+)
+
 
 @receiver(pre_save, sender=settings.AUTH_USER_MODEL)
 def user_pre_save_signal(sender, instance, **kwargs):
@@ -33,13 +40,9 @@ def user_post_save_signal(sender, instance, **kwargs):
             defaults={"name": "Default (Free)", "display_price": 0},
         )
         models.Customer.objects.create(user=instance, plan=default_plan)
-    if not instance.is_active and instance.customer.state != "free_default.new":
+    if not instance.is_active and instance.customer.state in CANCELABLE_STATES:
         # Cancel Stripe subscription immediately if the user is being soft deleted.
         # Clears all Customer-related info (other than Stripe customer_id)
-        # Only notify Stripe if Stripe has an active subscription.
-        notify_stripe = (
-            instance.customer.payment_state != models.Customer.PaymentState.OFF
-        )
         instance.customer.cancel_subscription(immediate=True)
     instance.customer.save()
 
@@ -47,11 +50,7 @@ def user_post_save_signal(sender, instance, **kwargs):
 @receiver(pre_delete, sender=settings.AUTH_USER_MODEL)
 def user_hard_delete_signal(sender, instance, **kwargs):
     """Cancel Stripe subscription, if any, when a User is hard deleted."""
-    if hasattr(instance, "customer") and instance.customer.state != "free_default.new":
+    if hasattr(instance, "customer") and instance.customer.state in CANCELABLE_STATES:
         # Cancel Stripe subscription immediately if the user is being soft deleted.
         # Clears all Customer-related info (other than Stripe customer_id)
-        # Only notify Stripe if Stripe has an active subscription.
-        notify_stripe = (
-            instance.customer.payment_state != models.Customer.PaymentState.OFF
-        )
         instance.customer.cancel_subscription(immediate=True)

@@ -145,7 +145,7 @@ class Customer(models.Model):
     )
 
     def cancel_subscription(self, immediate):
-        if self.payment_state == Customer.PaymentState.OFF:
+        if not immediate and self.payment_state == Customer.PaymentState.OFF:
             logger.error(
                 f"User.id={self.user.id} does not have an active subscription to cancel."
             )
