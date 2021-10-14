@@ -35,7 +35,7 @@ class CreateSubscriptionAPIView(APIView):
             customer.save()
 
         try:
-            subscription, payment_method = services.stripe_create_subscription(
+            subscription = services.stripe_create_subscription(
                 customer_id=customer.customer_id,
                 payment_method_id=serializer.validated_data["payment_method_id"],
                 price_id=serializer.plan.price_id,
@@ -45,12 +45,6 @@ class CreateSubscriptionAPIView(APIView):
 
         customer.subscription_id = subscription.id
         customer.plan = serializer.plan
-        cc_info = payment_method.card
-        customer.cc_info = {
-            k: cc_info[k]
-            for k in cc_info
-            if k in ("brand", "last4", "exp_month", "exp_year")
-        }
         services.stripe_customer_sync_metadata_email(request.user, customer.customer_id)
         if subscription.status == "active":
             customer.current_period_end = dt.fromtimestamp(
@@ -88,17 +82,11 @@ class CureFailedCardAPIView(APIView):
             == models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
         ):
             try:
-                payment_method = services.stripe_replace_card(
+                services.stripe_replace_card(
                     customer.customer_id,
                     customer.subscription_id,
                     request.data["payment_method_id"],
                 )
-                cc_info = payment_method.card
-                customer.cc_info = {
-                    k: cc_info[k]
-                    for k in cc_info
-                    if k in ("brand", "last4", "exp_month", "exp_year")
-                }
                 customer.save()
                 invoice = services.stripe_retry_latest_invoice(customer.customer_id)
                 if invoice["status"] == "paid":
@@ -155,19 +143,13 @@ class ReplaceCardAPIView(APIView):
             and customer.payment_state != models.Customer.PaymentState.OFF
         ):
             try:
-                payment_method = services.stripe_replace_card(
+                services.stripe_replace_card(
                     customer.customer_id,
                     customer.subscription_id,
                     request.data["payment_method_id"],
                 )
             except stripe.error.CardError as e:
                 raise ValidationError(e.error.message)
-            cc_info = payment_method.card
-            request.user.customer.cc_info = {
-                k: cc_info[k]
-                for k in cc_info
-                if k in ("brand", "last4", "exp_month", "exp_year")
-            }
             request.user.customer.save()
             return Response(status=201)
         else:

@@ -87,19 +87,14 @@ def stripe_create_subscription(customer_id, payment_method_id, price_id):
     if settings.STRIPE_API_KEY == "mock":
         from . import factories
 
-        return (
-            mock.MagicMock(
-                id=factories.id("sub"),
-                status="active",
-                current_period_end=(timezone.now() + timedelta(days=30)).timestamp(),
-            ),
-            mock.MagicMock(card=factories.cc_info()),
+        return mock.MagicMock(
+            id=factories.id("sub"),
+            status="active",
+            current_period_end=(timezone.now() + timedelta(days=30)).timestamp(),
         )
 
     # From https://stripe.com/docs/billing/subscriptions/fixed-price#collect-payment
-    payment_method = stripe.PaymentMethod.attach(
-        payment_method_id, customer=customer_id
-    )
+    stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
     subscription = stripe.Subscription.create(
         customer=customer_id,
         items=[{"price": price_id}],
@@ -107,22 +102,17 @@ def stripe_create_subscription(customer_id, payment_method_id, price_id):
         default_payment_method=payment_method_id,
     )
 
-    return subscription, payment_method
+    return subscription
 
 
 def stripe_replace_card(customer_id, subscription_id, payment_method_id):
     if settings.STRIPE_API_KEY == "mock":
-        from . import factories
+        return
 
-        return mock.MagicMock(card=factories.cc_info())
-
-    payment_method = stripe.PaymentMethod.attach(
-        payment_method_id, customer=customer_id
-    )
+    stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
     stripe.Subscription.modify(
         subscription_id, default_payment_method=payment_method_id
     )
-    return payment_method
 
 
 def stripe_retry_latest_invoice(customer_id):

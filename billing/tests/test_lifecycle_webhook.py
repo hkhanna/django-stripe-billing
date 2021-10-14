@@ -171,29 +171,6 @@ def test_incomplete_expired(client, customer):
     assert "free_default.new" == customer.state
 
 
-def test_payment_method_automatically_updated(client, customer):
-    """A network can update a user's credit card automatically"""
-    # Listen to payment_method.automatically_updated.
-    # See https://stripe.com/docs/saving-cards#automatic-card-updates
-    url = reverse("billing_api:stripe_webhook")
-    new_card = {"brand": "amex", "exp_month": 8, "exp_year": 2021, "last4": 1234}
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "payment_method.automatically_updated",
-        "data": {"object": {"customer": customer.customer_id, "card": new_card}},
-    }
-    response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
-    customer.refresh_from_db()
-    assert customer.payment_state == models.Customer.PaymentState.OK
-    assert new_card == customer.cc_info
-    assert "paid.paying" == customer.state
-
-
 def test_cancel_miss_final_cancel(client, customer):
     """User cancels and then we miss the final Stripe subscription cancelation
     webhook or the reactivation webhook."""

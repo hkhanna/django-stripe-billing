@@ -9,10 +9,6 @@ User = get_user_model()
 fake = faker.Faker()  # This is to use faker without the factory_boy wrapper
 
 
-def cc_info():
-    return {"brand": "visa", "last4": "1111", "exp_month": 11, "exp_year": 2017}
-
-
 def set_customer_paying(customer):
     """Takes a customer and flips the switches to make it paying"""
     customer.customer_id = fake.pystr()
@@ -22,7 +18,6 @@ def set_customer_paying(customer):
         before_now=False, after_now=True, tzinfo=timezone.utc
     )
     customer.subscription_id = fake.pystr()
-    customer.cc_info = cc_info()
     customer.save()
 
 

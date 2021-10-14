@@ -50,8 +50,6 @@ def _preprocess_payload_type(event):
             event.type = EVENT_TYPE.REACTIVATE_SUB
     elif payload["type"] == "customer.subscription.deleted":
         event.type = EVENT_TYPE.DELETE_SUB
-    elif payload["type"] == "payment_method.automatically_updated":
-        event.type = EVENT_TYPE.PAYMENT_METHOD_UPDATED
     event.save()
     return data_object
 
@@ -80,10 +78,6 @@ def _preprocess_type_info(event, data_object):
         info["subscription_id"] = data_object["id"]
         info["subscription_status"] = data_object["status"]
         info["cancel_at_period_end"] = data_object["cancel_at_period_end"]
-    elif event.type == EVENT_TYPE.PAYMENT_METHOD_UPDATED:
-        info["obj"] = "payment_method"
-        info["card"] = data_object["card"]
-        info["customer_id"] = data_object["customer"]
     event.info = info
     event.save()
     return info
@@ -111,8 +105,6 @@ def _preprocess_user(event):
             logger.warning(
                 f"StripeEvent.id={event.id} could not locate a user who may have been hard deleted."
             )
-    elif event.type == EVENT_TYPE.PAYMENT_METHOD_UPDATED:
-        event.user = User.objects.get(customer__customer_id=event.info["customer_id"])
     else:
         return None, None
 
@@ -153,11 +145,7 @@ def process_stripe_event(event_id, verify_signature=True):
             session_id = info["session_id"]
             session = stripe.checkout.Session.retrieve(
                 session_id,
-                expand=[
-                    "customer",
-                    "line_items",
-                    "subscription.default_payment_method",
-                ],
+                expand=["customer", "line_items", "subscription"],
             )
             subscription = session.subscription
 
@@ -181,12 +169,6 @@ def process_stripe_event(event_id, verify_signature=True):
 
             customer.subscription_id = subscription.id
             customer.plan = plan
-            cc_info = subscription.default_payment_method.card
-            customer.cc_info = {
-                k: cc_info[k]
-                for k in cc_info
-                if k in ("brand", "last4", "exp_month", "exp_year")
-            }
             if subscription.status == "active":
                 customer.current_period_end = dt.fromtimestamp(
                     subscription.current_period_end, tz=timezone.utc
@@ -235,15 +217,6 @@ def process_stripe_event(event_id, verify_signature=True):
                 customer.subscription_id = None
             event.status = models.StripeEvent.Status.PROCESSED
 
-        # Payment method automatically updated by card network -- API only.
-        elif event.type == EVENT_TYPE.PAYMENT_METHOD_UPDATED:
-            cc_info = info["card"]
-            customer.cc_info = {
-                k: cc_info[k]
-                for k in cc_info
-                if k in ("brand", "last4", "exp_month", "exp_year")
-            }
-            event.status = models.StripeEvent.Status.PROCESSED
         else:
             event.status = models.StripeEvent.Status.IGNORED
     except Exception as e:

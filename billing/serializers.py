@@ -52,11 +52,10 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Customer
-        fields = ["current_period_end", "payment_state", "cc_info", "state", "plan"]
+        fields = ["current_period_end", "payment_state", "state", "plan"]
         read_only_fields = [
             "current_period_end",
             "payment_state",
-            "cc_info",
             "state",
             "plan",
         ]

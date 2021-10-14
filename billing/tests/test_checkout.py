@@ -11,12 +11,10 @@ from .. import factories, settings, models
 def session(user, paid_plan, mock_stripe_checkout):
     session = mock_stripe_checkout.Session.retrieve.return_value
     current_period_end = timezone.now() + timedelta(days=30)
-    cc_info = factories.cc_info()
     session.client_reference_id = user.id
     session.subscription.id = "sub_paid"
     session.subscription.status = "active"
     session.subscription.current_period_end = current_period_end.timestamp()
-    session.subscription.default_payment_method.card = cc_info
     session.customer.id = factories.id("cus")
     session.line_items = {"data": [{"price": {"id": paid_plan.price_id}}]}
     return session
@@ -173,10 +171,6 @@ def test_webhook_create_subscription(
     )
     assert "sub_paid" == user.customer.subscription_id
     assert "paid.paying" == user.customer.state
-    assert json.dumps(user.customer.cc_info, sort_keys=True) == json.dumps(
-        session.subscription.default_payment_method.card,
-        sort_keys=True,
-    )
     assert (
         models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
     )

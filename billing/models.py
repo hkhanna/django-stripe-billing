@@ -132,9 +132,6 @@ class Customer(models.Model):
         blank=True,
         verbose_name="Stripe Subscription ID",
     )
-    cc_info = models.JSONField(
-        verbose_name="Stripe Credit Card Info", null=True, blank=True
-    )
 
     class PaymentState(models.TextChoices):
         OFF = "off"
@@ -331,7 +328,6 @@ class StripeEvent(models.Model):
         CANCEL_SUB = "cancel_sub", "Cancel Subscription"
         REACTIVATE_SUB = "reactivate_sub", "Reactivate Subscription"
         DELETE_SUB = "delete_sub", "Delete Subscription"
-        PAYMENT_METHOD_UPDATED = "payment_method_updated", "Payment Method Updated"
         IGNORED = "ignored", "Ignored"
 
     type = models.CharField(max_length=254, blank=True)

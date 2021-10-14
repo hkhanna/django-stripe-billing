@@ -55,7 +55,6 @@ class CustomerSerializerAPITest(APITestCase):
             {
                 "current_period_end": None,
                 "payment_state": models.Customer.PaymentState.OFF,
-                "cc_info": None,
                 "state": "free_default.new",
                 "plan": {
                     "name": "Default (Free)",
@@ -88,7 +87,6 @@ class CustomerSerializerAPITest(APITestCase):
                     "%Y-%m-%dT%H:%M:%SZ"
                 ),
                 "payment_state": models.Customer.PaymentState.OK,
-                "cc_info": user.customer.cc_info,
                 "state": "paid.paying",
                 "plan": {
                     "name": user.customer.plan.name,
@@ -133,7 +131,6 @@ class CustomerSerializerAPITest(APITestCase):
                     "%Y-%m-%dT%H:%M:%SZ"
                 ),
                 "payment_state": models.Customer.PaymentState.OFF,
-                "cc_info": user.customer.cc_info,
                 "state": "free_default.canceled.missed_webhook",
                 "plan": {
                     "name": free_default_plan.name,
@@ -175,7 +172,6 @@ class CustomerSerializerAPITest(APITestCase):
             {
                 "current_period_end": None,
                 "payment_state": models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD,
-                "cc_info": user.customer.cc_info,
                 "state": "free_default.incomplete.requires_payment_method",
                 "plan": {
                     "name": free_default_plan.name,
@@ -218,7 +214,6 @@ class CustomerSerializerAPITest(APITestCase):
                     "%Y-%m-%dT%H:%M:%SZ"
                 ),
                 "payment_state": models.Customer.PaymentState.OFF,
-                "cc_info": None,
                 "state": "free_private.expired",
                 "plan": {
                     "name": free_default_plan.name,
@@ -257,7 +252,6 @@ class CustomerSerializerAPITest(APITestCase):
             {
                 "current_period_end": None,
                 "payment_state": models.Customer.PaymentState.OFF,
-                "cc_info": None,
                 "state": "free_private.indefinite",
                 "plan": {
                     "name": user.customer.plan.name,
@@ -282,7 +276,6 @@ class SubscriptionAPITest(APITestCase):
         """Create Subscription endpoint succeeds and should set the customer_id, plan, current_period_end,
         payment_state and card_info"""
         current_period_end = timezone.now() + timedelta(days=30)
-        cc_info = factories.cc_info()
         args[0].Customer.create.return_value.id = factories.id("cus")
         args[0].Subscription.create.return_value.id = "sub_paid"
         args[0].Subscription.create.return_value.status = "active"
@@ -291,7 +284,6 @@ class SubscriptionAPITest(APITestCase):
         ].Subscription.create.return_value.current_period_end = (
             current_period_end.timestamp()
         )
-        args[0].PaymentMethod.attach.return_value.card = cc_info
         paid_plan = factories.PlanFactory(paid=True)
 
         self.user = factories.UserFactory()
@@ -316,14 +308,12 @@ class SubscriptionAPITest(APITestCase):
             self.user.customer.current_period_end.timestamp(),
         )
         self.assertEqual("sub_paid", self.user.customer.subscription_id)
-        self.assertJSONEqual(json.dumps(self.user.customer.cc_info), cc_info)
         self.assertEqual("paid.paying", self.user.customer.state)
 
     def test_create_subscription_customer_id_exists(self, *args):
         """Creating a Subscription should not change the customer_id or create a new Stripe customer
         if the Customer already has a customer_id"""
         current_period_end = timezone.now() + timedelta(days=30)
-        cc_info = factories.cc_info()
         args[0].Subscription.create.return_value.id = "sub_paid"
         args[0].Subscription.create.return_value.status = "active"
         args[
@@ -331,7 +321,6 @@ class SubscriptionAPITest(APITestCase):
         ].Subscription.create.return_value.current_period_end = (
             current_period_end.timestamp()
         )
-        args[0].PaymentMethod.attach.return_value.card = cc_info
         paid_plan = factories.PlanFactory(paid=True)
 
         self.user = factories.UserFactory(customer__customer_id="cus_xyz")
@@ -357,13 +346,11 @@ class SubscriptionAPITest(APITestCase):
             self.user.customer.current_period_end.timestamp(),
         )
         self.assertEqual("sub_paid", self.user.customer.subscription_id)
-        self.assertJSONEqual(json.dumps(self.user.customer.cc_info), cc_info)
         self.assertEqual("paid.paying", self.user.customer.state)
 
     def test_create_subscription_failed(self, *args):
         """Create Subscription endpoint attaches the payment method to the Customer but the charge fails. Should set
         the customer's payment_state and state but the plan and current_period_end should not be modified."""
-        cc_info = factories.cc_info()
         args[0].Customer.create.return_value.id = factories.id("cus")
         args[0].Subscription.create.return_value.id = "sub_paid"
         args[0].Subscription.create.return_value.status = "incomplete"
@@ -372,7 +359,6 @@ class SubscriptionAPITest(APITestCase):
         ].Subscription.create.return_value.latest_invoice.payment_intent.status = (
             "requires_payment_method"
         )
-        args[0].PaymentMethod.attach.return_value.card = cc_info
 
         self.user = factories.UserFactory()
         self.client.force_login(self.user)
@@ -395,7 +381,6 @@ class SubscriptionAPITest(APITestCase):
         )
         self.assertEqual(None, self.user.customer.current_period_end)
         self.assertEqual("sub_paid", self.user.customer.subscription_id)
-        self.assertJSONEqual(json.dumps(self.user.customer.cc_info), cc_info)
         self.assertEqual(
             "free_default.incomplete.requires_payment_method", self.user.customer.state
         )
@@ -439,7 +424,6 @@ class SubscriptionAPITest(APITestCase):
         )
         self.assertEqual(models.Plan.Type.PAID_PUBLIC, self.user.customer.plan.type)
         self.assertEqual("sub_1", self.user.customer.subscription_id)
-        self.assertJSONEqual(json.dumps(self.user.customer.cc_info), new_cc_info)
         self.assertEqual(
             mock_period_end.timestamp(),
             self.user.customer.current_period_end.timestamp(),
@@ -575,4 +559,3 @@ class SubscriptionAPITest(APITestCase):
         self.assertEqual(
             models.Customer.PaymentState.OK, self.user.customer.payment_state
         )
-        self.assertJSONEqual(json.dumps(self.user.customer.cc_info), new_cc_info)
