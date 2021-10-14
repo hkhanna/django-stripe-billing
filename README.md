@@ -9,7 +9,6 @@
    ```
    git+https://github.com/hkhanna/billing.git
    ```
-
 1. Add "billing" to your INSTALLED_APPS setting like this:
 
    ```
@@ -18,7 +17,6 @@
            'billing',
        ]
    ```
-
 1. Include the billing URLconf in your project urls.py like this:
 
    ```
@@ -26,20 +24,17 @@
        ... OR ...
        path('billing/', include('billing.urls.api')),  # namespace is billing_api
    ```
-
 1. You can use both checkout and API functionality if you wish.
 
    ```
        path('billing/', include('billing.urls.checkout')),
        path('billing/', include('billing.urls.api'))
    ```
-
 1. If you are using the `billing.urls.api` views, you must have Django REST Framework installed.
-1. Set the configuration variables (see below).
+1. Set the [configuration variables](#configuration).
 1. Run `python manage.py migrate` to create the billing models.
 1. Run `python manage.py billing_init`, which will create Customer objects for existing Users. If you don't do this, you may run into errors.
 1. Add this to your user admin file:
-
    ```
    import billing.admin
    ...
@@ -52,8 +47,8 @@
 
 - `BILLING_STRIPE_API_KEY`: The Stripe API key.
   - **Required**
-  - Use the word "mock" for a mocked Stripe client.
-  - You can also use a test Stripe API key.
+  - If only using the API, you may use the word "mock" for a mocked Stripe client.
+  - You can also use a test Stripe API key. You must use a real test Stripe API key if using Stripe Checkout / Portal.
   - Obviously, only use a live environment Stripe API key in production.
 - `BILLING_APPLICATION_NAME`: The name of the application.
   - **Required**
@@ -72,12 +67,24 @@
 1. `python3 -m venv .venv`
 1. `source .venv/bin/activate`
 1. `pip install -r requirements.txt`
-1. OPTIONAL: Use celery for webhook processing: `pip install celery`. If you don't install celery, it will process webhooks synchronously.
 1. `python3 manage.py migrate`
 1. `python3 manage.py createsuperuser`
 1. `python3 manage.py runserver`
+1. OPTIONAL: Use celery for webhook processing: `pip install celery`. If you don't install celery, it will process webhooks synchronously.
 1. If you are going to run the non-API Stripe Checkout and Checkout Portal flow, you need to set `BILLING_STRIPE_API_KEY` and setup a Paid plan in the admin with
    a Stripe `price_id` from the real Stripe testing environment.
+
+### Simulating Webhooks
+1. [Install the Stripe CLI](https://stripe.com/docs/stripe-cli). It's simple on Linux, just extract the `tar.gz` file and put the file in your `PATH`.
+1. Create the file in `~/.config/stripe/config.toml` with this format:
+```
+  [default]
+    device_name = "<choose a name>"
+    test_mode_api_key = "<test environment secret or restricted key>"
+    test_mode_publishable_key = "<test environment publishable key>"
+```
+1. Run `stripe listen --forward-to localhost:8000/billing/stripe/webhook/`
+1. If you want to re-send an event: `stripe events resend evt_<evtid>`
 
 ## Running the Test Suite
 

@@ -5,16 +5,11 @@
 {% endfor %}
 <p>Your plan: {{current_plan}}</p>
 <p>{{ state_note }}</p>
-{% if can_create_subscription %}
-<form action={% url 'billing_checkout:create_checkout_session' %} method="POST">
+<form action={% url url %} method="POST">
 {% csrf_token %}
+  {% if plan_id %}
   <input type="hidden" name="plan_id" value="{{plan_id}}" />
-  <button type="submit">Create Subscription</button>
+  {% endif %}
+  <button type="submit">{{button_text}}</button>
 </form>
-{% elif can_cancel %}
-<form action={% url 'billing_checkout:create_portal_session' %} method="POST">
-{% csrf_token %}
-  <button type="submit">Cancel Subscription</button>
-</form>
-{% endif %}
 {% endblock content %}

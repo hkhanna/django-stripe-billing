@@ -1,4 +1,5 @@
 """Stripe webhook functionality"""
+# TODO rename to lifecycle webhooks only?
 
 import json
 from datetime import timedelta
@@ -8,12 +9,6 @@ from django.utils import timezone
 from django.urls import reverse
 
 from .. import models, factories
-
-
-@pytest.fixture
-def upcoming_period_end():
-    """Period that is upcoming for renewal"""
-    return factories.fake.future_datetime(end_date="+5d", tzinfo=timezone.utc)
 
 
 @pytest.fixture

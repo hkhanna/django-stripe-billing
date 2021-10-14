@@ -16,6 +16,11 @@
         },
         "editor.tabSize": 2
     },
+    "[markdown]": {
+        "editor.wordWrap": "on",
+        "editor.quickSuggestions": false,
+        "editor.formatOnSave": false
+    },
     "files.exclude": {
         "**/__pycache__": true,
         "**/.venv": true

@@ -18,6 +18,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     def state_note(customer):
         """Convenience to avoid doing lots of logic in the template"""
         # TODO: on soft delete, clear some of this out of Customer
+        # Maybe delete the Subscription immediately rather than at the end of the period.
         if customer.state == "free_default.new":
             return ""
         elif customer.state == "free_default.canceled":
@@ -48,27 +49,28 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         customer = self.request.user.customer
         state = customer.state
 
-        ctx["can_create_subscription"] = state in (
+        if state in (
             "free_default.new",
             "free_default.canceled",
             "free_default.canceled.incomplete",
             "paid.canceled",
-        )
-        if ctx["can_create_subscription"]:
+        ):
+            ctx["url"] = "billing_checkout:create_checkout_session"
             ctx["plan_id"] = (
                 models.Plan.objects.filter(type=models.Plan.Type.PAID_PUBLIC).first().id
             )
-
-        ctx["requires_payment_method"] = state in (
+            ctx["button_text"] = "Create Subscription"
+        elif state in (
             "free_default.past_due.requires_payment_method",
             "free_default.incomplete.requires_payment_method",
             "paid.past_due.requires_payment_method",
-        )
-
-        ctx["can_cancel"] = state == "paid.paying"
-        if state == "paid.paying":
-            ctx["cc_info"] = customer.cc_info
-        ctx["can_reactivate"] = state == "paid.will_cancel"
+            "paid.paying",
+        ):
+            ctx["url"] = "billing_checkout:create_portal_session"
+            ctx["button_text"] = "Update or Cancel Subscription"
+        elif state == "paid.will_cancel":
+            ctx["url"] = "billing_checkout:create_portal_session"
+            ctx["button_text"] = "Reactivate Subscription"
         ctx["state_note"] = self.state_note(customer)
         ctx[
             "current_plan"

@@ -66,6 +66,11 @@ def user():
 
 
 @pytest.fixture
+def customer(user):
+    return user.customer
+
+
+@pytest.fixture
 def auth_client(client, user):
     client.force_login(user)
     return client
@@ -74,3 +79,9 @@ def auth_client(client, user):
 @pytest.fixture
 def paid_plan():
     return factories.PlanFactory(paid=True)
+
+
+@pytest.fixture
+def upcoming_period_end():
+    """Period that is upcoming for renewal"""
+    return factories.fake.future_datetime(end_date="+5d", tzinfo=timezone.utc)

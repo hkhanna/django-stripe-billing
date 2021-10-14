@@ -129,7 +129,8 @@ def process_stripe_event(event_id):
                 event.info = "Subscription creation webhook. No action was taken."
             event.status = models.StripeEvent.Status.PROCESSED
 
-        # Payment failure webhooks
+        # Payment failure, cancelation, and reactivation webhooks.
+        # Note Cancelation not relevant for API usage.
         elif (
             event.type == "customer.subscription.updated"
             or event.type == "customer.subscription.deleted"
@@ -153,15 +154,28 @@ def process_stripe_event(event_id):
                 customer.subscription_id = None
                 customer.payment_state = models.Customer.PaymentState.OFF
                 customer.save()
+            # Cancelation
+            elif (
+                subscription["status"] == "active"
+                and subscription["cancel_at_period_end"] is True
+            ):
+                customer.payment_state = models.Customer.PaymentState.OFF
+                customer.save()
+            # Reactivation
+            elif (
+                subscription["status"] == "active"
+                and subscription["cancel_at_period_end"] is False
+            ):
+                customer.payment_state = models.Customer.PaymentState.OK
+                customer.save()
             else:
                 logger.info(
                     f"StripeEvent.id={event_id} StripeEvent.type=customer.subscription.updated taking no action "
-                    f"because status is {subscription['status']} and not actionable"
                 )
-                event.info = "Payload 'status' is not actionable. No action was taken."
+                event.info = "Payload is not actionable. No action was taken."
             event.status = models.StripeEvent.Status.PROCESSED
 
-        # Payment method automatically updated by card network
+        # Payment method automatically updated by card network -- API only.
         elif event.type == "payment_method.automatically_updated":
             payment_method = payload["data"]["object"]
             customer = models.Customer.objects.get(
