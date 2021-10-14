@@ -151,7 +151,13 @@ def test_webhook_create_subscription(
         "id": "evt_test",
         "object": "event",
         "type": "checkout.session.completed",
-        "data": {"object": {"id": factories.id("sess")}},
+        "data": {
+            "object": {
+                "id": factories.id("sess"),
+                "subscription": factories.id("sub"),
+                "client_reference_id": user.pk,
+            }
+        },
     }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
@@ -187,7 +193,13 @@ def test_webhook_create_subscription_mismatched_customer_id(
         "id": "evt_test",
         "object": "event",
         "type": "checkout.session.completed",
-        "data": {"object": {"id": factories.id("sess")}},
+        "data": {
+            "object": {
+                "id": factories.id("sess"),
+                "subscription": factories.id("sub"),
+                "client_reference_id": user.pk,
+            }
+        },
     }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
@@ -205,8 +217,15 @@ def test_link_event_to_user(client, user, session):
         "id": "evt_test",
         "object": "event",
         "type": "checkout.session.completed",
-        "data": {"object": {"id": factories.id("sess")}},
+        "data": {
+            "object": {
+                "id": factories.id("sess"),
+                "subscription": factories.id("sub"),
+                "client_reference_id": user.pk,
+            }
+        },
     }
+
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()

@@ -51,9 +51,11 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             "free_private.expired",
         ):
             ctx["url"] = "billing_checkout:create_checkout_session"
-            ctx["plan_id"] = (
-                models.Plan.objects.filter(type=models.Plan.Type.PAID_PUBLIC).first().id
+            plan, _ = models.Plan.objects.get_or_create(
+                type=models.Plan.Type.PAID_PUBLIC,
+                defaults={"display_price": 9, "name": "Paid Plan", "price_id": "setme"},
             )
+            ctx["plan_id"] = plan.id
             ctx["button_text"] = "Create Subscription"
         elif state in (
             "free_default.past_due.requires_payment_method",

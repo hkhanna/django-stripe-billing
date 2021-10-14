@@ -153,7 +153,6 @@ class Customer(models.Model):
     )
 
     def cancel_subscription(self, immediate):
-        # TODO: check missing webhook logic
         if self.payment_state == Customer.PaymentState.OFF:
             logger.error(
                 f"User.id={self.user.id} does not have an active subscription to cancel."
@@ -166,16 +165,6 @@ class Customer(models.Model):
         self.expecting_webhook_since = timezone.now()
         self.save()
         return services.stripe_cancel_subscription(self.subscription_id, immediate)
-
-    def delete_subscription(self):
-        """This should only ever be called during Stripe Event processing."""
-        # TODO maybe move this to tasks?
-        # Downgrade to free_default.new
-        self.payment_state = Customer.PaymentState.OFF
-        self.plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
-        self.current_period_end = None
-        self.subscription_id = None
-        self.save()
 
     @property
     def state(self):
@@ -340,21 +329,39 @@ class StripeEvent(models.Model):
     """Stripe Events from webhooks"""
 
     event_id = models.CharField(max_length=254)
-    type = models.CharField(max_length=254)
+
+    class Type(models.TextChoices):
+        NEW_SUB = "new_sub", "New Subscription"
+        RENEW_SUB = "renew_sub", "Renew Subscription"
+        PAYMENT_FAIL = "payment_fail", "Payment Failure"
+        CANCEL_SUB = "cancel_sub", "Cancel Subscription"
+        REACTIVATE_SUB = "reactivate_sub", "Reactivate Subscription"
+        DELETE_SUB = "delete_sub", "Delete Subscription"
+        PAYMENT_METHOD_UPDATED = "payment_method_updated", "Payment Method Updated"
+        IGNORED = "ignored", "Ignored"
+
+    type = models.CharField(max_length=254, blank=True)
+    payload_type = models.CharField(max_length=254)
     received_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    info = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For convenience, import information from the body and other sources.",
     )
 
     # body can't be a JSONField since Stripe webhook signature checking will fail
     body = models.TextField()
     headers = models.JSONField()
-    info = models.TextField(blank=True)
+    note = models.TextField(blank=True)
 
     class Status(models.TextChoices):
         NEW = "new"
         PENDING = "pending"
         PROCESSED = "processed"
+        IGNORED = "ignored"
         ERROR = "error"
 
     status = models.CharField(
@@ -362,4 +369,7 @@ class StripeEvent(models.Model):
     )
 
     def __str__(self):
-        return f"{self.type}"
+        if self.type:
+            return StripeEvent.Type(self.type).label
+        else:
+            return self.payload_type

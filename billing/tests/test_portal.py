@@ -27,7 +27,11 @@ def test_portal_happy(auth_client, mock_stripe_billing_portal):
 
 def test_portal_wrong_state(auth_client, customer, mock_stripe_billing_portal):
     """A Customer with an inapproprate state should not be able to access the Stripe Portal"""
-    customer.delete_subscription()
+    customer.payment_state = models.Customer.PaymentState.OFF
+    customer.plan = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
+    customer.current_period_end = None
+    customer.subscription_id = None
+    customer.save()
     assert customer.state == "free_default.new"
 
     url = reverse("billing_checkout:create_portal_session")
@@ -40,7 +44,7 @@ def test_portal_wrong_state(auth_client, customer, mock_stripe_billing_portal):
 def test_cancel_subscription(client, customer, mock_stripe_subscription):
     """Cancelation lifecycle. From initial cancelation to Stripe cancel_at_period_end
     webhook to final subscription deletion webhook."""
-    # Step 1 - Canceling a subscription sets waiting_for_webhook
+    # Step 1 - Canceling a subscription sets expecting_webhook_since
     # and calls out to Stripe to cancel at period end."""
 
     # This is basically what Portal does if you cancel through it.
@@ -60,7 +64,8 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
         "object": "event",
         "type": "customer.subscription.updated",
         "data": {
-            "object": {"id": "sub", "status": "active", "cancel_at_period_end": True}
+            "object": {"id": "sub", "status": "active", "cancel_at_period_end": True},
+            "previous_attributes": {"cancel_at_period_end": False},
         },
     }
     client.post(url, payload, content_type="application/json")
@@ -76,7 +81,9 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
         "id": "evt_test",
         "object": "event",
         "type": "customer.subscription.deleted",
-        "data": {"object": {"id": "sub", "status": "canceled"}},
+        "data": {
+            "object": {"id": "sub", "status": "canceled", "cancel_at_period_end": False}
+        },
     }
     client.post(url, payload, content_type="application/json")
     customer.refresh_from_db()
@@ -85,11 +92,8 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
 
 
 def test_cancel_subscription_immediately(client, customer, mock_stripe_subscription):
-    """Immediately canceling a subscription sets waiting_for_webhook
+    """Immediately canceling a subscription sets expecting_webhook_since
     and calls out to Stripe to cancel immediately."""
-    # TODO how to handle a hard user deletion?
-    # Maybe factor out user getting in tasks. Warn if we can't find a user. Look by customer_id rather
-    # than subscription_id.
     customer.cancel_subscription(immediate=True)
     assert mock_stripe_subscription.delete.called is True
     assert customer.expecting_webhook_since is not None
@@ -102,7 +106,9 @@ def test_cancel_subscription_immediately(client, customer, mock_stripe_subscript
         "id": "evt_test",
         "object": "event",
         "type": "customer.subscription.deleted",
-        "data": {"object": {"id": "sub", "status": "canceled"}},
+        "data": {
+            "object": {"id": "sub", "status": "canceled", "cancel_at_period_end": False}
+        },
     }
     client.post(url, payload, content_type="application/json")
     customer.refresh_from_db()
@@ -122,7 +128,8 @@ def test_reactivate_subscription(client, customer):
         "object": "event",
         "type": "customer.subscription.updated",
         "data": {
-            "object": {"id": "sub", "status": "active", "cancel_at_period_end": False}
+            "object": {"id": "sub", "status": "active", "cancel_at_period_end": False},
+            "previous_attributes": {"cancel_at_period_end": True},
         },
     }
     response = client.post(url, payload, content_type="application/json")

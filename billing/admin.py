@@ -31,7 +31,8 @@ class PlanAdmin(admin.ModelAdmin):
 
 @admin.register(models.StripeEvent)
 class StripeEventAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "status", "received_at"]
+    list_select_related = ["user"]
+    list_display = ["__str__", "payload_type", "user", "status", "received_at"]
 
 
 class StripeEventAdminInline(admin.TabularInline):

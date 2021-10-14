@@ -44,10 +44,17 @@ def test_bad_json(client):
 def test_unrecognized_type(client):
     """Unrecognized event type"""
     url = reverse("billing_api:stripe_webhook")
-    payload = {"id": "evt_test", "object": "event", "type": "bad.type"}
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "bad.type",
+        "data": {"object": None},
+    }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
-    assert models.StripeEvent.Status.ERROR == models.StripeEvent.objects.first().status
+    assert (
+        models.StripeEvent.Status.IGNORED == models.StripeEvent.objects.first().status
+    )
 
 
 def test_renewed(client, customer):
@@ -89,9 +96,12 @@ def test_payment_failure(client, customer, upcoming_period_end):
     payload = {
         "id": "evt_test",
         "object": "event",
-        "type": "customer.subscription.updated",
-        "data": {"object": {"id": "sub", "status": "past_due"}},
+        "type": "invoice.payment_failed",
+        "data": {
+            "object": {"subscription": "sub", "billing_reason": "subscription_cycle"}
+        },
     }
+
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
     assert (
@@ -113,7 +123,9 @@ def test_payment_failure_permanent(client, customer, upcoming_period_end):
         "id": "evt_test",
         "object": "event",
         "type": "customer.subscription.deleted",
-        "data": {"object": {"id": "sub", "status": "canceled"}},
+        "data": {
+            "object": {"id": "sub", "status": "canceled", "cancel_at_period_end": False}
+        },
     }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
@@ -140,8 +152,14 @@ def test_incomplete_expired(client, customer):
     payload = {
         "id": "evt_test",
         "object": "event",
-        "type": "customer.subscription.updated",
-        "data": {"object": {"id": "sub", "status": "incomplete_expired"}},
+        "type": "customer.subscription.deleted",
+        "data": {
+            "object": {
+                "id": "sub",
+                "status": "incomplete_expired",
+                "cancel_at_period_end": False,
+            }
+        },
     }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
@@ -179,6 +197,8 @@ def test_payment_method_automatically_updated(client, customer):
 def test_cancel_miss_final_cancel(client, customer):
     """User cancels and then we miss the final Stripe subscription cancelation
     webhook or the reactivation webhook."""
+    # N.B. Missing the initial cancelation webhook is nbd since the Portal
+    # will remain accessible and eventually final cancelation will come through.
     customer.payment_state = models.Customer.PaymentState.OFF
     customer.save()
     assert "paid.will_cancel" == customer.state
@@ -204,22 +224,14 @@ def test_past_due_miss_final_cancel(client, customer):
         assert "free_default.past_due.requires_payment_method" == customer.state
 
 
-@pytest.mark.parametrize(
-    "type",
-    [
-        "invoice.paid",
-        "customer.subscription.updated",
-        "customer.subscription.deleted",
-    ],
-)
-def test_link_event_to_user(client, customer, type):
+def test_link_event_to_user(client, customer):
     url = reverse("billing_api:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
-        "type": type,
+        "type": "customer.subscription.deleted",
         "data": {
-            "object": {"id": "sub", "subscription": "sub", "status": "notimportant"}
+            "object": {"id": "sub", "status": "canceled", "cancel_at_period_end": False}
         },
     }
     response = client.post(url, payload, content_type="application/json")

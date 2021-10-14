@@ -473,7 +473,7 @@ class SubscriptionAPITest(APITestCase):
         args[0].Subscription.create.assert_not_called()
 
     def test_cancel_subscription(self, *args):
-        """Canceling a subscription sets waiting_for_webhook
+        """Canceling a subscription sets expecting_webhook_since
         but otherwise does not affect the billing plan."""
         self.user = factories.UserFactory(paying=True)
         self.client.force_login(self.user)

@@ -150,6 +150,7 @@ This package includes factories and serializers for use. Documentation to come!
 - A user with a free private (i.e. staff) plan that has expired will drop to the limits set in the free_default plan. A user with a free private plan where there
   is no current_period_end set will be treated as NO expiration date on the plan and will continue to enjoy the free private plan indefinitely.
 
+
 ## Development Stripe Notes
 
 Generally, you won't need to use a real test environment `BILLING_STRIPE_API_KEY` during local development. If `BILLING_STRIPE_API_KEY=mock`, the application will be careful not to interface with Stripe and instead mock all of its responses.
