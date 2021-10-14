@@ -1,8 +1,25 @@
 import pytest
 import json
+from datetime import timedelta
 from django.urls import reverse
+from django.utils import timezone
 
 from .. import factories, settings, models
+
+
+@pytest.fixture
+def session(user, paid_plan, mock_stripe_checkout):
+    session = mock_stripe_checkout.Session.retrieve.return_value
+    current_period_end = timezone.now() + timedelta(days=30)
+    cc_info = factories.cc_info()
+    session.client_reference_id = user.id
+    session.subscription.id = "sub_paid"
+    session.subscription.status = "active"
+    session.subscription.current_period_end = current_period_end.timestamp()
+    session.subscription.default_payment_method.card = cc_info
+    session.customer.id = factories.id("cus")
+    session.line_items = {"data": [{"price": {"id": paid_plan.price_id}}]}
+    return session
 
 
 def test_create_checkout_session_happy(auth_client, paid_plan, mock_stripe_checkout):

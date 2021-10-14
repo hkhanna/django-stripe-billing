@@ -125,14 +125,27 @@ class CheckoutSuccessView(LoginRequiredMixin, View):
 class CreatePortalView(LoginRequiredMixin, View):
     def post(self, request):
 
+        # User should be able to access the Portal.
+        customer = request.user.customer
+        if customer.state not in (
+            "free_default.past_due.requires_payment_method",
+            "free_default.incomplete.requires_payment_method",
+            "paid.past_due.requires_payment_method",
+            "paid.paying",
+            "paid.will_cancel",
+        ):
+            logger.error(
+                f"User.id={request.user.id} attempted to create a portal session with an inappropriate state."
+            )
+            messages.error(request, "User does not have access.")
+            return redirect(settings.PORTAL_RETURN_URL)
+
         # If it's not an absolute URL, make it one.
         return_url = settings.PORTAL_RETURN_URL
         if not urlparse(return_url).netloc:
             return_url = f"{request.scheme}://{request.get_host()}{return_url}"
 
         customer_id = request.user.customer.customer_id
-
-        # TODO make sure user should be able to access the portal
 
         session = stripe.billing_portal.Session.create(
             customer=customer_id,

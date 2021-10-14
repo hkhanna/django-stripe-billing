@@ -120,6 +120,7 @@
 ### Checkout Usage
 
 - `POST` to `billing:create_checkout_session` to create a Stripe Checkout Session.
+- `POST` to `billing:create_portal_session` to create a Stripe Billing Portal Session.
 - Look at the example app for more details on how to use it.
 
 ### API Usage

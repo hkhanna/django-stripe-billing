@@ -162,9 +162,9 @@ def process_stripe_event(event_id):
                 subscription["status"] == "active"
                 and subscription["cancel_at_period_end"] is False
             ):
-                # TODO: validation check so Customer doesn't go invalid
-                customer.payment_state = models.Customer.PaymentState.OK
-                customer.save()
+                if customer.state == "paid.will_cancel":
+                    customer.payment_state = models.Customer.PaymentState.OK
+                    customer.save()
             else:
                 logger.info(
                     f"StripeEvent.id={event_id} StripeEvent.type=customer.subscription.updated taking no action "
