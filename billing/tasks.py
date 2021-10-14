@@ -57,6 +57,7 @@ def process_stripe_event(event_id):
             user = User.objects.get(pk=session.client_reference_id)
             # TODO move up
             event.user = user
+            # TODO expecting webhook logic (may handle in refactor)
 
             # Get the Plan the Customer signed up for.
             price_id = session.line_items["data"][0]["price"]["id"]
@@ -140,6 +141,7 @@ def process_stripe_event(event_id):
         ):
             subscription = payload["data"]["object"]
             customer = models.Customer.objects.get(subscription_id=subscription["id"])
+            customer.expecting_webhook_since = None
             event.user = customer.user
             if subscription["status"] == "past_due":
                 customer.payment_state = (
@@ -151,22 +153,26 @@ def process_stripe_event(event_id):
                     logger.error(
                         f"StripeEvent.id={event_id} receiving incomplete_expired on a Customer that does not have the proper state."
                     )
-                customer.cancel_subscription(immediate=True, notify_stripe=False)
+                customer.delete_subscription()
+            # Final cancelation - either past_due or user canceled
             elif subscription["status"] == "canceled":
-                # Final cancelation - either past_due or user canceled
-                customer.cancel_subscription(immediate=True, notify_stripe=False)
+                customer.expecting_webhook_since = None
+                customer.delete_subscription()
             # Cancelation
             elif (
                 subscription["status"] == "active"
                 and subscription["cancel_at_period_end"] is True
             ):
-                customer.cancel_subscription(immediate=False, notify_stripe=False)
+                customer.expecting_webhook_since = None
+                customer.payment_state = models.Customer.PaymentState.OFF
+                customer.save()
             # Reactivation
             elif (
                 subscription["status"] == "active"
                 and subscription["cancel_at_period_end"] is False
             ):
                 if customer.state == "paid.will_cancel":
+                    customer.expecting_webhook_since = None
                     customer.payment_state = models.Customer.PaymentState.OK
                     customer.save()
             else:

@@ -132,6 +132,11 @@ class Customer(models.Model):
         blank=True,
         verbose_name="Stripe Subscription ID",
     )
+    expecting_webhook_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="If this is more than a minute in the past, we may have missed a Stripe webhook.",
+    )
     cc_info = models.JSONField(
         verbose_name="Stripe Credit Card Info", null=True, blank=True
     )
@@ -147,10 +152,10 @@ class Customer(models.Model):
         max_length=128, default=PaymentState.OFF, choices=PaymentState.choices
     )
 
-    def cancel_subscription(self, immediate, notify_stripe):
+    def cancel_subscription(self, immediate):
+        # TODO: check missing webhook logic
         if self.payment_state == Customer.PaymentState.OFF:
-            # This could happen if a user cancels their sub and then deletes their account.
-            logger.warning(
+            logger.error(
                 f"User.id={self.user.id} does not have an active subscription to cancel."
             )
             return False
@@ -158,16 +163,19 @@ class Customer(models.Model):
         logger.info(
             f"User.id={self.user.id} canceling subscription_id {self.subscription_id}"
         )
-        self.payment_state = Customer.PaymentState.OFF
-        if immediate:
-            # Downgrade to free_default.new
-            self.plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
-            self.current_period_end = None
-            self.subscription_id = None
-        if notify_stripe:
-            services.stripe_cancel_subscription(self.subscription_id, not immediate)
+        self.expecting_webhook_since = timezone.now()
         self.save()
-        return True
+        return services.stripe_cancel_subscription(self.subscription_id, immediate)
+
+    def delete_subscription(self):
+        """This should only ever be called during Stripe Event processing."""
+        # TODO maybe move this to tasks?
+        # Downgrade to free_default.new
+        self.payment_state = Customer.PaymentState.OFF
+        self.plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
+        self.current_period_end = None
+        self.subscription_id = None
+        self.save()
 
     @property
     def state(self):

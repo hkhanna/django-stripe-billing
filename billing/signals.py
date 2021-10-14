@@ -40,9 +40,7 @@ def user_post_save_signal(sender, instance, **kwargs):
         notify_stripe = (
             instance.customer.payment_state != models.Customer.PaymentState.OFF
         )
-        instance.customer.cancel_subscription(
-            immediate=True, notify_stripe=notify_stripe
-        )
+        instance.customer.cancel_subscription(immediate=True)
     instance.customer.save()
 
 
@@ -56,6 +54,4 @@ def user_hard_delete_signal(sender, instance, **kwargs):
         notify_stripe = (
             instance.customer.payment_state != models.Customer.PaymentState.OFF
         )
-        instance.customer.cancel_subscription(
-            immediate=True, notify_stripe=notify_stripe
-        )
+        instance.customer.cancel_subscription(immediate=True)

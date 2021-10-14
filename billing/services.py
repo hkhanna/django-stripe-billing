@@ -166,14 +166,15 @@ def stripe_retry_latest_invoice(customer_id):
     return invoice
 
 
-def stripe_cancel_subscription(subscription_id, at_period_end=True):
+def stripe_cancel_subscription(subscription_id, immediate=False):
     if settings.STRIPE_API_KEY == "mock":
         return None
 
     # From https://stripe.com/docs/billing/subscriptions/cancel#canceling
-    return stripe.Subscription.modify(
-        subscription_id, cancel_at_period_end=at_period_end
-    )
+    if immediate:
+        return stripe.Subscription.delete(subscription_id)
+    else:
+        return stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
 
 
 def stripe_reactivate_subscription(subscription_id):

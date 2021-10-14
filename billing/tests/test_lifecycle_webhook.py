@@ -179,8 +179,8 @@ def test_payment_method_automatically_updated(client, customer):
 def test_cancel_miss_final_cancel(client, customer):
     """User cancels and then we miss the final Stripe subscription cancelation
     webhook or the reactivation webhook."""
-    customer.cancel_subscription(immediate=False, notify_stripe=True)
-    customer.refresh_from_db()
+    customer.payment_state = models.Customer.PaymentState.OFF
+    customer.save()
     assert "paid.will_cancel" == customer.state
 
     sixty_days_hence = timezone.now() + timedelta(days=60)

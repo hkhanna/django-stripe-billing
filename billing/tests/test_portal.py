@@ -27,7 +27,7 @@ def test_portal_happy(auth_client, mock_stripe_billing_portal):
 
 def test_portal_wrong_state(auth_client, customer, mock_stripe_billing_portal):
     """A Customer with an inapproprate state should not be able to access the Stripe Portal"""
-    customer.cancel_subscription(immediate=True, notify_stripe=False)
+    customer.delete_subscription()
     assert customer.state == "free_default.new"
 
     url = reverse("billing_checkout:create_portal_session")
@@ -37,10 +37,22 @@ def test_portal_wrong_state(auth_client, customer, mock_stripe_billing_portal):
     assert response.url == settings.PORTAL_RETURN_URL
 
 
-def test_cancel_subscription(client, customer):
-    """Canceling a subscription sets payment_state to off,
-    does not renew at the end of the billing period but otherwise
-    does not affect the billing plan."""
+def test_cancel_subscription(client, customer, mock_stripe_subscription):
+    """Cancelation lifecycle. From initial cancelation to Stripe cancel_at_period_end
+    webhook to final subscription deletion webhook."""
+    # Step 1 - Canceling a subscription sets waiting_for_webhook
+    # and calls out to Stripe to cancel at period end."""
+
+    # This is basically what Portal does if you cancel through it.
+    customer.cancel_subscription(immediate=False)
+    assert customer.expecting_webhook_since is not None
+    assert (
+        customer.state == "paid.paying"
+    )  # No change to state until we receive the webhook.
+    assert mock_stripe_subscription.modify.called is True
+
+    # Step 2 - Stripe sends cancel at period end webhook, resulting
+    # in the correct Customer state."""
 
     url = reverse("billing_api:stripe_webhook")
     payload = {
@@ -51,19 +63,57 @@ def test_cancel_subscription(client, customer):
             "object": {"id": "sub", "status": "active", "cancel_at_period_end": True}
         },
     }
-    response = client.post(url, payload, content_type="application/json")
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
+    client.post(url, payload, content_type="application/json")
     customer.refresh_from_db()
+    assert customer.expecting_webhook_since is None
     assert customer.payment_state == models.Customer.PaymentState.OFF
     assert customer.current_period_end > timezone.now()
     assert customer.state == "paid.will_cancel"
 
+    # Step 3 - Stripe sends subscription deletion webhook once the
+    # subscription is truly deleted, resulting in the correct Customer state.
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "customer.subscription.deleted",
+        "data": {"object": {"id": "sub", "status": "canceled"}},
+    }
+    client.post(url, payload, content_type="application/json")
+    customer.refresh_from_db()
+    assert customer.expecting_webhook_since is None
+    assert customer.state == "free_default.new"
+
+
+def test_cancel_subscription_immediately(client, customer, mock_stripe_subscription):
+    """Immediately canceling a subscription sets waiting_for_webhook
+    and calls out to Stripe to cancel immediately."""
+    # TODO how to handle a hard user deletion?
+    # Maybe factor out user getting in tasks. Warn if we can't find a user. Look by customer_id rather
+    # than subscription_id.
+    customer.cancel_subscription(immediate=True)
+    assert mock_stripe_subscription.delete.called is True
+    assert customer.expecting_webhook_since is not None
+    assert (
+        customer.state == "paid.paying"
+    )  # No change to state until we receive the webhook.
+
+    url = reverse("billing_api:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "customer.subscription.deleted",
+        "data": {"object": {"id": "sub", "status": "canceled"}},
+    }
+    client.post(url, payload, content_type="application/json")
+    customer.refresh_from_db()
+    assert customer.expecting_webhook_since is None
+    assert customer.state == "free_default.new"
+
 
 def test_reactivate_subscription(client, customer):
     """Reactivating a subscription that will be canceled before the end of the billing cycle"""
-    customer.cancel_subscription(immediate=False, notify_stripe=True)
+    customer.payment_state = models.Customer.PaymentState.OFF
+    customer.save()
     assert customer.state == "paid.will_cancel"
 
     url = reverse("billing_api:stripe_webhook")

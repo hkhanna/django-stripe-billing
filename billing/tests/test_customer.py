@@ -75,15 +75,14 @@ def test_soft_delete_user_active_subscription(mock_stripe_subscription):
 
     user.is_active = False
     user.save()
-    assert mock_stripe_subscription.modify.call_count == 1
-    assert models.Customer.PaymentState.OFF == user.customer.payment_state
+    assert mock_stripe_subscription.delete.call_count == 1
 
 
 def test_delete_user_active_subscription(mock_stripe_subscription):
     """Hard deleting a User with an active Stripe subscription cancels the Subscription."""
     user = factories.UserFactory(paying=True)
     user.delete()
-    assert mock_stripe_subscription.modify.call_count == 1
+    assert mock_stripe_subscription.delete.call_count == 1
     assert 0 == models.Customer.objects.count()
 
 

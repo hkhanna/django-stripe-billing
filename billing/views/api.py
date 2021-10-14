@@ -120,9 +120,7 @@ class CancelSubscriptionAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        if not request.user.customer.cancel_subscription(
-            immediate=False, notify_stripe=True
-        ):
+        if not request.user.customer.cancel_subscription(immediate=False):
             raise ValidationError("No active subscription to cancel.")
         else:
             return Response(status=201)
