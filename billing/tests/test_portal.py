@@ -44,12 +44,10 @@ def test_portal_wrong_state(auth_client, customer, mock_stripe_billing_portal):
 def test_cancel_subscription(client, customer, mock_stripe_subscription):
     """Cancelation lifecycle. From initial cancelation to Stripe cancel_at_period_end
     webhook to final subscription deletion webhook."""
-    # Step 1 - Canceling a subscription sets expecting_webhook_since
-    # and calls out to Stripe to cancel at period end."""
+    # Step 1 - Canceling a subscription and calls out to Stripe to cancel at period end."""
 
     # This is basically what Portal does if you cancel through it.
     customer.cancel_subscription(immediate=False)
-    assert customer.expecting_webhook_since is not None
     assert (
         customer.state == "paid.paying"
     )  # No change to state until we receive the webhook.
@@ -70,7 +68,6 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
     }
     client.post(url, payload, content_type="application/json")
     customer.refresh_from_db()
-    assert customer.expecting_webhook_since is None
     assert customer.payment_state == models.Customer.PaymentState.OFF
     assert customer.current_period_end > timezone.now()
     assert customer.state == "paid.will_cancel"
@@ -87,16 +84,13 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
     }
     client.post(url, payload, content_type="application/json")
     customer.refresh_from_db()
-    assert customer.expecting_webhook_since is None
     assert customer.state == "free_default.new"
 
 
 def test_cancel_subscription_immediately(client, customer, mock_stripe_subscription):
-    """Immediately canceling a subscription sets expecting_webhook_since
-    and calls out to Stripe to cancel immediately."""
+    """Immediately canceling a subscription calls out to Stripe to cancel immediately."""
     customer.cancel_subscription(immediate=True)
     assert mock_stripe_subscription.delete.called is True
-    assert customer.expecting_webhook_since is not None
     assert (
         customer.state == "paid.paying"
     )  # No change to state until we receive the webhook.
@@ -112,7 +106,6 @@ def test_cancel_subscription_immediately(client, customer, mock_stripe_subscript
     }
     client.post(url, payload, content_type="application/json")
     customer.refresh_from_db()
-    assert customer.expecting_webhook_since is None
     assert customer.state == "free_default.new"
 
 

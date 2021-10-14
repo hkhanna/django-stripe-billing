@@ -5,9 +5,6 @@
 {% endfor %}
 <p>Your plan: {{current_plan}}</p>
 <p>{{ state_note }}</p>
-{% if expecting_webhook %}
-<p>Awaiting an update from Stripe...</p>
-{% endif %}
 <form action={% url url %} method="POST">
 {% csrf_token %}
   {% if plan_id %}

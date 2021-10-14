@@ -75,5 +75,4 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         ctx[
             "current_plan"
         ] = f"{customer.plan.name} (${customer.plan.display_price}/mo)"
-        ctx["expecting_webhook"] = customer.expecting_webhook_since is not None
         return ctx

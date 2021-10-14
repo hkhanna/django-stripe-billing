@@ -132,11 +132,6 @@ class Customer(models.Model):
         blank=True,
         verbose_name="Stripe Subscription ID",
     )
-    expecting_webhook_since = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="If this is more than a minute in the past, we may have missed a Stripe webhook.",
-    )
     cc_info = models.JSONField(
         verbose_name="Stripe Credit Card Info", null=True, blank=True
     )
@@ -162,7 +157,6 @@ class Customer(models.Model):
         logger.info(
             f"User.id={self.user.id} canceling subscription_id {self.subscription_id}"
         )
-        self.expecting_webhook_since = timezone.now()
         self.save()
         return services.stripe_cancel_subscription(self.subscription_id, immediate)
 

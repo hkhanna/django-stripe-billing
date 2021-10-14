@@ -473,8 +473,7 @@ class SubscriptionAPITest(APITestCase):
         args[0].Subscription.create.assert_not_called()
 
     def test_cancel_subscription(self, *args):
-        """Canceling a subscription sets expecting_webhook_since
-        but otherwise does not affect the billing plan."""
+        """Canceling a subscription does not immediately affect the billing plan."""
         self.user = factories.UserFactory(paying=True)
         self.client.force_login(self.user)
         url = reverse("billing_api:cancel-subscription")
@@ -483,7 +482,6 @@ class SubscriptionAPITest(APITestCase):
         args[0].Subscription.modify.assert_called_once()
         self.user.customer.refresh_from_db()
         self.assertEqual("paid.paying", self.user.customer.state)
-        self.assertIsNotNone(self.user.customer.expecting_webhook_since)
 
     def test_cancel_subscription_error(self, *args):
         """Cancelling a subscription with payment_state set to off will 400"""

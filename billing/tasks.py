@@ -118,7 +118,6 @@ def _preprocess_user(event):
 
     event.save()
     customer = event.user.customer
-    customer.expecting_webhook_since = None
     return event.user, customer
 
 
