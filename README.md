@@ -82,10 +82,12 @@
 - `POST` to `billing:create_portal_session` to create a Stripe Billing Portal Session.
   - Form data must contain `return_url` which is the URL to go back to once the Customer is done with the Portal. If this is omitted, it defaults to the `LOGIN_REDIRECT_URL`.
 - A `BillingMixin` is available in `billing.mixins.BillingMixin`. This defines a `get_context_data(self, **kwargs)` method that returns the following context:
-  - `url` for the form button to take you to the Stripe Checkout/Portal.
-  - `button_text` text for the button describing what it will do.
-  - `state_note` describes basic info about the Customer's current subscription status.
+  - `billing_enabled` is a convenience check for whether billing is enabled.
+  - `stripe_session_url` for the form button to take you to the Stripe Checkout/Portal.
+  - `stripe_session_button_text` text for the button describing what it will do.
+  - `billing_state_note` describes basic info about the Customer's current subscription status.
   - `current_plan` the the instance of the Customer's Plan. `current_plan.name` and `current_plan.display_price` are useful if you want to display those things to the user.
+  - `stripe_session_type` is either `checkout` or `portal` or None (if it's not showing a Stripe url at all).
   - `paid_plan_id` is the pk of the first Paid Plan found in the database. It's only available if the user can sign up for a new paid plan.
 - Look at the example app for more details on how to use it.
 

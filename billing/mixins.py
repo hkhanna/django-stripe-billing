@@ -36,7 +36,7 @@ class BillingMixin:
             "free_default.new",
             "free_private.expired",
         ):
-            ctx["url"] = "billing:create_checkout_session"
+            ctx["stripe_session_url"] = "billing:create_checkout_session"
             paid_plan = models.Plan.objects.filter(
                 type=models.Plan.Type.PAID_PUBLIC
             ).first()
@@ -44,20 +44,26 @@ class BillingMixin:
             if not paid_plan:
                 return {"billing_enabled": False}
             ctx["paid_plan_id"] = paid_plan.id
-            ctx["button_text"] = "Upgrade to Paid Plan"
+            ctx["stripe_session_button_text"] = "Upgrade to Paid Plan"
+            ctx["stripe_session_type"] = "checkout"
         elif state in (
             "free_default.past_due.requires_payment_method",
             "paid.past_due.requires_payment_method",
             "paid.paying",
         ):
-            ctx["url"] = "billing:create_portal_session"
-            ctx["button_text"] = "Update or Cancel Plan"
+            ctx["stripe_session_url"] = "billing:create_portal_session"
+            ctx["stripe_session_button_text"] = "Update or Cancel Plan"
+            ctx["stripe_session_type"] == "portal"
         elif state == "paid.will_cancel":
-            ctx["url"] = "billing:create_portal_session"
-            ctx["button_text"] = "Reactivate Paid Plan"
+            ctx["stripe_session_url"] = "billing:create_portal_session"
+            ctx["stripe_session_button_text"] = "Reactivate Paid Plan"
+            ctx["stripe_session_type"] == "portal"
         elif state == "free_default.canceled.missed_webhook":
-            ctx["url"] = "profile"
-            ctx["button_text"] = "There is a problem with your subscription."
-        ctx["state_note"] = self.state_note(customer)
+            ctx["stripe_session_url"] = "profile"
+            ctx[
+                "stripe_session_button_text"
+            ] = "There is a problem with your subscription."
+            ctx["stripe_session_type"] == None
+        ctx["billing_state_note"] = self.state_note(customer)
         ctx["current_plan"] = customer.plan
         return ctx

@@ -5,12 +5,14 @@
 {% endfor %}
 <p>Your plan: {{current_plan.name}} $({{current_plan.display_price}})</p>
 <p>{{ state_note }}</p>
-<form action={% url url %} method="POST">
+<form action={% url stripe_session_url %} method="POST">
 {% csrf_token %}
   {% if paid_plan_id %}
-  <input type="hidden" name="plan_id" value="{{plan_id}}" />
+    <input type="hidden" name="plan_id" value="{{paid_plan_id}}" />
   {% endif %}
-  <input type="hidden" name="return_url" value="/accounts/profile/" />
-  <button type="submit">{{button_text}}</button>
+  {% if stripe_session_type == "portal" %}
+    <input type="hidden" name="return_url" value={{portal_return_url}} />
+  {% endif %}
+  <button type="submit">{{stripe_session_button_text}}</button>
 </form>
 {% endblock content %}
