@@ -11,6 +11,7 @@
    git+https://github.com/hkhanna/billing.git
    ...
    ```
+1. You may now need to install it with `pip install -r requirements.txt`.
 1. Add "billing" to your INSTALLED_APPS setting like this:
    ```
    INSTALLED_APPS = [
