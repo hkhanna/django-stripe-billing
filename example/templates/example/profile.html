@@ -3,13 +3,14 @@
 {% for message in messages %}
 <p>- {{ message }}</p>
 {% endfor %}
-<p>Your plan: {{current_plan}}</p>
+<p>Your plan: {{current_plan.name}} $({{current_plan.display_price}})</p>
 <p>{{ state_note }}</p>
 <form action={% url url %} method="POST">
 {% csrf_token %}
-  {% if plan_id %}
+  {% if paid_plan_id %}
   <input type="hidden" name="plan_id" value="{{plan_id}}" />
   {% endif %}
+  <input type="hidden" name="return_url" value="/accounts/profile/" />
   <button type="submit">{{button_text}}</button>
 </form>
 {% endblock content %}
