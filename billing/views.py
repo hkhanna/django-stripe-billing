@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 from django.views.generic import View
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ImproperlyConfigured
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.urls import reverse
@@ -18,16 +17,6 @@ from . import models, settings, services, tasks
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-
-for setting in ("CHECKOUT_SUCCESS_URL", "CHECKOUT_CANCEL_URL", "PORTAL_RETURN_URL"):
-    missing = []
-    if getattr(settings, setting) is None:
-        missing.append(setting)
-    if len(missing) > 0:
-        missing = ", ".join(missing)
-        raise ImproperlyConfigured(
-            f"Checkout views need {missing} settings configured."
-        )
 
 
 @csrf_exempt
@@ -163,6 +152,11 @@ class CheckoutSuccessView(LoginRequiredMixin, View):
 class CreatePortalView(LoginRequiredMixin, View):
     def post(self, request):
 
+        # If it's not an absolute URL, make it one.
+        return_url = request.POST.get("return_url", settings.LOGIN_REDIRECT_URL)
+        if not urlparse(return_url).netloc:
+            return_url = f"{request.scheme}://{request.get_host()}{return_url}"
+
         # User should be able to access the Portal.
         customer = request.user.customer
         if customer.state not in (
@@ -175,12 +169,7 @@ class CreatePortalView(LoginRequiredMixin, View):
                 f"User.id={request.user.id} attempted to create a portal session with an inappropriate state."
             )
             messages.error(request, "User does not have access.")
-            return redirect(settings.PORTAL_RETURN_URL)
-
-        # If it's not an absolute URL, make it one.
-        return_url = settings.PORTAL_RETURN_URL
-        if not urlparse(return_url).netloc:
-            return_url = f"{request.scheme}://{request.get_host()}{return_url}"
+            return redirect(return_url)
 
         customer_id = request.user.customer.customer_id
 

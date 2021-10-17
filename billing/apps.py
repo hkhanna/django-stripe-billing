@@ -9,6 +9,15 @@ class BillingConfig(AppConfig):
     def ready(self):
         import billing.signals
 
-        for setting in ("STRIPE_API_KEY", "APPLICATION_NAME"):
+        for setting in (
+            "STRIPE_API_KEY",
+            "APPLICATION_NAME",
+            "CHECKOUT_SUCCESS_URL",
+            "CHECKOUT_CANCEL_URL",
+        ):
+            missing = []
             if getattr(settings, setting) is None:
-                raise ImproperlyConfigured(f"Must set {setting} setting")
+                missing.append(setting)
+            if len(missing) > 0:
+                missing = ", ".join(missing)
+                raise ImproperlyConfigured(f"{missing} must be configured.")

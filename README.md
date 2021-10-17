@@ -40,6 +40,8 @@
 ### Stripe Configuration
 1. In your Stripe dashboard, you _must_ configure it to cancel a customer's subscription if all retries for a payment fail.
 1. Do not allow the Customer to update their email address in Customer Portal.
+1. Do not allow the Customer to update billing information (other than payment method) or view invoice history.
+1. Update the branding of Checkout/Portal to match the branding of your site.
 1. In your Stripe dashboard, set up a product (with an optional statement descriptor), and set up a price for that product.
 1. In the Stripe dashboard, the following webhooks should be set to point to `https://production.url/billing/stripe/webhook/`:
     - `checkout.session.completed` 
@@ -73,7 +75,9 @@
 
 ## Usage
 - `POST` to `billing:create_checkout_session` to create a Stripe Checkout Session.
+  - Form data must contain `plan_id` which is the pk of the paid billing plan.
 - `POST` to `billing:create_portal_session` to create a Stripe Billing Portal Session.
+  - Form data must contain `return_url` which is the URL to go back to once the Customer is done with the Portal. If this is omitted, it defaults to the `LOGIN_REDIRECT_URL`.
 - Look at the example app for more details on how to use it.
 
 ### Things to Know
