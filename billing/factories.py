@@ -1,9 +1,12 @@
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 import factory
+import factory.random
 from factory.faker import faker
 
 from . import models
+
+factory.random.reseed_random(42)
 
 User = get_user_model()
 fake = faker.Faker()  # This is to use faker without the factory_boy wrapper
