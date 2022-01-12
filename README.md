@@ -53,9 +53,10 @@
     - `customer.subscription.updated`
     - `customer.subscription.deleted`
 
-### Environment Variables
+### Django Settings
 - `BILLING_STRIPE_API_KEY`: The Stripe API key.
   - **Required**
+  - If this is a real Stripe API key, it should be set in an environment variable.
   - You may use the word `mock` for a mocked Stripe client. This can be useful in local development. You can't use Checkout/Portal, but any other function that calls out to stripe will just call a mock.
   - You must use a real test environment Stripe API key if using Stripe Checkout / Portal while developing locally.
   - Obviously, only use a live environment Stripe API key in production.
@@ -74,6 +75,7 @@
   - Must be an absolute URL or begin with a `/`.
 - `BILLING_STRIPE_WH_SECRET`
   - Optional
+  - If set, this should be in an environment variable.
   - If this is set, Stripe webhook processing will verify the webhook signature for authenticity.
 
 ## Usage
