@@ -53,17 +53,11 @@ class BillingMixin:
         ):
             ctx["stripe_session_url"] = "billing:create_portal_session"
             ctx["stripe_session_button_text"] = "Update or Cancel Plan"
-            ctx["stripe_session_type"] == "portal"
+            ctx["stripe_session_type"] = "portal"
         elif state == "paid.will_cancel":
             ctx["stripe_session_url"] = "billing:create_portal_session"
             ctx["stripe_session_button_text"] = "Reactivate Paid Plan"
-            ctx["stripe_session_type"] == "portal"
-        elif state == "free_default.canceled.missed_webhook":
-            ctx["stripe_session_url"] = "profile"
-            ctx[
-                "stripe_session_button_text"
-            ] = "There is a problem with your subscription."
-            ctx["stripe_session_type"] == None
+            ctx["stripe_session_type"] = "portal"
         ctx["billing_state_note"] = self.state_note(customer)
         ctx["current_plan"] = customer.plan
         return ctx
