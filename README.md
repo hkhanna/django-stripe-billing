@@ -73,6 +73,10 @@
   - Where Stripe Checkout should redirect on cancel.
   - This view should parse Django messages.
   - Must be an absolute URL or begin with a `/`.
+- `BILLING_PORTAL_RETURN_URL`
+  - **Optional**
+  - Where Stripe Customer Portal should redirect back to when done.
+  - If not provided, a `return_url` attribute must be specified in the `POST` when creating a Customer Portal.
 - `BILLING_STRIPE_WH_SECRET`
   - Optional
   - If set, this should be in an environment variable.

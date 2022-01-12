@@ -153,7 +153,7 @@ class CreatePortalView(LoginRequiredMixin, View):
     def post(self, request):
 
         # If it's not an absolute URL, make it one.
-        return_url = request.POST.get("return_url", settings.LOGIN_REDIRECT_URL)
+        return_url = request.POST.get("return_url", settings.PORTAL_RETURN_URL)
         if not urlparse(str(return_url)).netloc:
             return_url = f"{request.scheme}://{request.get_host()}{return_url}"
 
