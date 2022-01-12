@@ -50,14 +50,14 @@ def stripe_customer_sync_metadata_email(user, stripe_customer_id):
         )
         customer_update["email"] = user.email
     if customer_update:
-        stripe_modify_customer(user, **customer_update)
+        stripe_modify_customer(stripe_customer_id, **customer_update)
 
 
-def stripe_modify_customer(user, **kwargs):
+def stripe_modify_customer(customer_id, **kwargs):
     if settings.STRIPE_API_KEY == "mock":
-        return mock.MagicMock(id=user.customer.customer_id)
+        return mock.MagicMock(id=customer_id)
 
-    customer = stripe.Customer.modify(user.customer.customer_id, **kwargs)
+    customer = stripe.Customer.modify(customer_id, **kwargs)
     return customer
 
 

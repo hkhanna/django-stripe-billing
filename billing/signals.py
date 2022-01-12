@@ -25,7 +25,9 @@ def user_pre_save_signal(sender, instance, **kwargs):
             or orig.email != instance.email
         ):
             name = f"{instance.first_name} {instance.last_name}"
-            services.stripe_modify_customer(instance, name=name, email=instance.email)
+            services.stripe_modify_customer(
+                instance.customer.customer_id, name=name, email=instance.email
+            )
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
