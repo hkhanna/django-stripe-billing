@@ -84,7 +84,7 @@ class CreateCheckoutSessionView(LoginRequiredMixin, View):
 
         # If it's not an absolute URL, make it one.
         cancel_url = settings.CHECKOUT_CANCEL_URL
-        if not urlparse(cancel_url).netloc:
+        if not urlparse(str(cancel_url)).netloc:
             cancel_url = f"{request.scheme}://{request.get_host()}{cancel_url}"
 
         # Send either customer_id or customer_email (Stripe does not allow both)
@@ -154,7 +154,7 @@ class CreatePortalView(LoginRequiredMixin, View):
 
         # If it's not an absolute URL, make it one.
         return_url = request.POST.get("return_url", settings.LOGIN_REDIRECT_URL)
-        if not urlparse(return_url).netloc:
+        if not urlparse(str(return_url)).netloc:
             return_url = f"{request.scheme}://{request.get_host()}{return_url}"
 
         # User should be able to access the Portal.
