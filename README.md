@@ -95,7 +95,6 @@
   - `current_plan` the the instance of the Customer's Plan. `current_plan.name` and `current_plan.display_price` are useful if you want to display those things to the user.
   - `stripe_session_type` is either `checkout` or `portal` or None (if it's not showing a Stripe url at all).
   - `paid_plan_id` is the pk of the first Paid Plan found in the database. It's only available if the user can sign up for a new paid plan.
-- Look at the example app for more details on how to use it.
 
 ### Things to Know
 - The app should automatically create a Default Free plan during installation.
@@ -117,17 +116,6 @@
 1. `source .venv/bin/activate`
 1. `pip install -r requirements.txt`
 1. `py.test`
-
-### Running the example app
-1. `python3 -m venv .venv`
-1. `source .venv/bin/activate`
-1. `pip install -r requirements.txt`
-1. `python3 manage.py migrate`
-1. `python3 manage.py createsuperuser`
-1. `python3 manage.py runserver`
-1. OPTIONAL: Use celery for webhook processing: `pip install celery`. If you don't install celery, it will process webhooks synchronously.
-1. If you are going to run the Stripe Checkout and Checkout Portal flow, you need to set `BILLING_STRIPE_API_KEY` and setup a Paid plan in the admin with
-   a Stripe `price_id` from the real Stripe testing environment.
 
 #### Simulating Webhooks
 1. [Install the Stripe CLI](https://stripe.com/docs/stripe-cli). It's simple on Linux, just extract the `tar.gz` file and put the file in your `PATH`.
