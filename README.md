@@ -201,3 +201,7 @@ You can see what they are in `billing.models`. This can be improved and should p
 - "When a subscription changes to past_due, your webhook script could email you about the problem so you can reach out to the customer, or the script could email the customer directly, asking them to update their payment details." Although maybe we could rely on this: https://stripe.com/docs/billing/subscriptions/overview#emails
 - Interstitial pages to wait for webhooks. Imagine you do the checkout flow then it redirects you to a spinner page that polls an endpoint for where to go next. If the webhook hasn't been received redirect back for 3 seconds. If it has, redirect to the success page.
 - Move away from Portal. Maybe wouldn't be terrible since all the heavy lifting happens in webhook processing. The interstitial pages would be useful here. 
+
+## Releases
+
+To publish a new release, push a git tag.
