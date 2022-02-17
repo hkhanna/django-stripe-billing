@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="django-stripe-billing",
-    version="0.3.6",
+    version="0.3.7",
     author="Harry Khanna",
     author_email="harry@khanna.cc",
     description="Django billing plans and payments with Stripe",

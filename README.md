@@ -1,16 +1,11 @@
-# billing
+# django-stripe-billing
 
-`billing` is a Django app to manage Stripe billing plans.
+`django-stripe-billing` is a Django app to manage Stripe billing plans.
 
 ## Installation
 
 
-1. Add "billing" to your `requirements.txt`
-   ```
-   ...
-   git+https://github.com/hkhanna/billing.git
-   ...
-   ```
+1. Add "django-stripe-billing" to your `requirements.txt`
 1. You may now need to install it with `pip install -r requirements.txt`.
 1. Add "billing" to your INSTALLED_APPS setting like this:
    ```
