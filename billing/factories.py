@@ -75,13 +75,6 @@ class UserFactory(factory.django.DjangoModelFactory):
     )
     password = "goodpass"
 
-    @classmethod
-    def _create(cls, model_class, *args, **kwargs):
-        """Override the default ``_create`` with our custom call."""
-        manager = cls._get_manager(model_class)
-        # The default would use ``manager.create(*args, **kwargs)``
-        return manager.create_user(*args, **kwargs)
-
     # customer is always created by the signal and there isn't any way to prevent that.
     # These are a couple post-generation hooks allowing us to manipulate customer after its been created.
     # This is a poor man's "trait" since we can't use traits directly on the customer model because its

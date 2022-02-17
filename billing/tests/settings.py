@@ -35,13 +35,12 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": "db.sqlite3",
-        "ATOMIC_REQUESTS": False,
     }
 }
 
 TIME_ZONE = "UTC"
 USE_TZ = True
-
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Billing
 # Stripe - Don't use the 'mock' key because we want to patch the stripe library in the tests

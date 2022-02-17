@@ -20,7 +20,7 @@
        path('billing/', include('billing.urls')), 
    ```
 1. OPTIONAL: Use celery for webhook processing: `pip install celery` and add it to requirements. If you don't install celery, it will process webhooks synchronously.
-1. Set the [environment variables](#environment-variables).
+1. Set the [Django settings](#django-settings).
 1. Run `python manage.py migrate` to create the billing models.
 1. Run `python manage.py billing_init`, which will create Customer objects for existing Users. If you don't do this, you may run into errors.
 1. Add this to your user admin file:
