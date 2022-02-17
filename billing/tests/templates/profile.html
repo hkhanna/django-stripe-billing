@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>billing app</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+  </head>
+
+  <body>
+    {% for message in messages %}
+    <p>- {{ message }}</p>
+    {% endfor %}
+    <p>Your plan: {{current_plan.name}} $({{current_plan.display_price}})</p>
+    <p>{{ billing_state_note }}</p>
+    {% if stripe_session_url %}
+    <form action={% url stripe_session_url %} method="POST">
+    {% csrf_token %}
+      {% if paid_plan_id %}
+        <input type="hidden" name="plan_id" value="{{paid_plan_id}}" />
+      {% endif %}
+      <button type="submit">{{stripe_session_button_text}}</button>
+    </form>
+    {% endif %}
+  </body>
+</html>

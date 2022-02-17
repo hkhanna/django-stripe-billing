@@ -23,4 +23,4 @@ def test_billing_mixin(auth_client, monkeypatch, state):
     monkeypatch.setattr(Customer, "state", state)
     url = reverse("profile")
     response = auth_client.get(url)
-    assertTemplateUsed(response, "example/profile.html")
+    assertTemplateUsed(response, "profile.html")

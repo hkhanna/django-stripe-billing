@@ -19,7 +19,10 @@ def test_save_user_create_customer():
     # Not using the UserFactory here to really emphasize that we're saving a User and triggering
     # the signal.
     user = User.objects.create_user(
-        first_name="Firstname", last_name="Lastname", email="user@example.com"
+        first_name="Firstname",
+        last_name="Lastname",
+        username="Firstname Lastname",
+        email="user@example.com",
     )
     assert user.customer.state == "free_default.new"
     assert models.Customer.objects.filter(user=user).exists() is True
