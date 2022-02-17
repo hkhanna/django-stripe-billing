@@ -55,7 +55,7 @@ USE_TZ = True
 # Stripe - Don't use the 'mock' key because we want to patch the stripe library in the tests
 BILLING_STRIPE_API_KEY = "testing"
 BILLING_STRIPE_WH_SECRET = None
-BILLING_APPLICATION_NAME = "example"
+BILLING_APPLICATION_NAME = "billing_test"
 BILLING_CHECKOUT_SUCCESS_URL = "/accounts/profile/"
 BILLING_CHECKOUT_CANCEL_URL = "/accounts/profile/"
 
