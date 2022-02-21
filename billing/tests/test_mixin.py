@@ -18,7 +18,7 @@ from ..models import Customer
         "free_private.will_expire",
     ],
 )
-def test_billing_mixin(auth_client, monkeypatch, state):
+def test_billing_mixin(auth_client, monkeypatch, state, paid_plan):
     """BillingMixin should not raise no matter what the Customer state"""
     monkeypatch.setattr(Customer, "state", state)
     url = reverse("profile")
