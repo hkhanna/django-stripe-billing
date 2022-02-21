@@ -55,12 +55,16 @@ def stripe_webhook_view(request):
 class CreateCheckoutSessionView(LoginRequiredMixin, View):
     def post(self, request):
         # Redirect to cancel url if no price id or if price id not in Plan
+        plan_name = request.POST.get("plan_name", None)
+        plan_id = request.POST.get("plan_id", None)
         plan = models.Plan.objects.filter(
-            id=request.POST.get("plan_id", None), type=models.Plan.Type.PAID_PUBLIC
+            name=plan_name,
+            id=plan_id,
+            type__in=[models.Plan.Type.PAID_PUBLIC, models.Plan.Type.PAID_PRIVATE],
         ).first()
         if not plan:
             logger.error(
-                f"In CreateCheckoutSessionView, invalid plan_id provided: {request.POST.get('plan_id', None)}"
+                f"In CreateCheckoutSessionView, invalid combination of plan_name={plan_name} and plan_id={plan_id}"
             )
             messages.error(request, "Invalid billing plan.")
             return redirect(settings.CHECKOUT_CANCEL_URL)

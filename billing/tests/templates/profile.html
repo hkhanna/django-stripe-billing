@@ -16,7 +16,8 @@
     {% if stripe_session_url %}
     <form action={% url stripe_session_url %} method="POST">
     {% csrf_token %}
-      {% if paid_plan_id %}
+      {% if paid_plan_name and paid_plan_id %}
+        <input type="hidden" name="plan_name" value="{{paid_plan_name}}" />
         <input type="hidden" name="plan_id" value="{{paid_plan_id}}" />
       {% endif %}
       <button type="submit">{{stripe_session_button_text}}</button>

@@ -49,9 +49,10 @@ class BillingMixin:
             paid_plan = models.Plan.objects.filter(
                 type=models.Plan.Type.PAID_PUBLIC
             ).first()
-            # Don't use this Mixin if you have not created a Paid plan.
+            # Don't use this Mixin if you have not created a PAID_PUBLIC plan.
             if not paid_plan:
                 return {"billing_enabled": False}
+            ctx["paid_plan_name"] = paid_plan.name
             ctx["paid_plan_id"] = paid_plan.id
             ctx["stripe_session_button_text"] = "Upgrade to Paid Plan"
             ctx["stripe_session_type"] = "checkout"

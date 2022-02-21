@@ -24,7 +24,7 @@ def test_create_checkout_session_happy(auth_client, paid_plan, mock_stripe_check
     """create_checkout_session creates a Stripe Session
     and redirects to the appropriate URL"""
     url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": paid_plan.id}
+    payload = {"plan_name": paid_plan.name, "plan_id": paid_plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.call_count == 1
     assert response.status_code == 302
@@ -36,7 +36,7 @@ def test_create_checkout_session_bad_plan_id(
 ):
     """Bad plan id should cancel the checkout flow"""
     url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": paid_plan.id + 1}
+    payload = {"plan_name": paid_plan.name, "plan_id": paid_plan.id + 1}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
@@ -61,7 +61,7 @@ def test_create_checkout_session_already_paid(
     """A User with an existing subscription may not access the create_checkout_session endpoint."""
     factories.set_customer_paying(user.customer)
     url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": paid_plan.id}
+    payload = {"plan_name": paid_plan.name, "plan_id": paid_plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
@@ -72,7 +72,7 @@ def test_nonpublic_plan(auth_client, mock_stripe_checkout):
     """Billing Plans that are not public cannot be accessed via Checkout"""
     plan = factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
     url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": plan.id}
+    payload = {"plan_name": plan.name, "plan_id": plan.id}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
