@@ -1,5 +1,4 @@
 import pytest
-import json
 from datetime import timedelta
 from django.urls import reverse
 from django.utils import timezone
@@ -23,9 +22,11 @@ def session(user, paid_plan, mock_stripe_checkout):
 def test_create_checkout_session_happy(auth_client, paid_plan, mock_stripe_checkout):
     """create_checkout_session creates a Stripe Session
     and redirects to the appropriate URL"""
-    url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": paid_plan.id}
-    response = auth_client.post(url, payload)
+    url = reverse(
+        "billing:create_checkout_session",
+        kwargs={"slug": paid_plan.slug, "pk": paid_plan.id},
+    )
+    response = auth_client.post(url, {})
     assert mock_stripe_checkout.Session.create.call_count == 1
     assert response.status_code == 302
     assert response.url == mock_stripe_checkout.Session.create.return_value.url
@@ -35,19 +36,24 @@ def test_create_checkout_session_bad_plan_id(
     auth_client, paid_plan, mock_stripe_checkout
 ):
     """Bad plan id should cancel the checkout flow"""
-    url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": paid_plan.id + 1}
-    response = auth_client.post(url, payload)
+    url = reverse(
+        "billing:create_checkout_session",
+        kwargs={"slug": paid_plan.slug, "pk": paid_plan.id + 1},
+    )
+    response = auth_client.post(url, {})
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
     assert response.url == settings.CHECKOUT_CANCEL_URL
 
 
-def test_create_checkout_session_bad_plan_id(
+def test_create_checkout_session_unmatched_plan_slug(
     auth_client, paid_plan, mock_stripe_checkout
 ):
-    """No plan id should cancel the checkout flow"""
-    url = reverse("billing:create_checkout_session")
+    """A plan slug that doesn't match the id should fail"""
+    url = reverse(
+        "billing:create_checkout_session",
+        kwargs={"slug": "badslug", "pk": paid_plan.id},
+    )
     payload = {}
     response = auth_client.post(url, payload)
     assert mock_stripe_checkout.Session.create.called is False
@@ -60,9 +66,11 @@ def test_create_checkout_session_already_paid(
 ):
     """A User with an existing subscription may not access the create_checkout_session endpoint."""
     factories.set_customer_paying(user.customer)
-    url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": paid_plan.id}
-    response = auth_client.post(url, payload)
+    url = reverse(
+        "billing:create_checkout_session",
+        kwargs={"slug": paid_plan.slug, "pk": paid_plan.id},
+    )
+    response = auth_client.post(url, {})
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
     assert response.url == settings.CHECKOUT_CANCEL_URL
@@ -71,9 +79,11 @@ def test_create_checkout_session_already_paid(
 def test_nonpublic_plan(auth_client, mock_stripe_checkout):
     """Billing Plans that are not public cannot be accessed via Checkout"""
     plan = factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
-    url = reverse("billing:create_checkout_session")
-    payload = {"plan_id": plan.id}
-    response = auth_client.post(url, payload)
+    url = reverse(
+        "billing:create_checkout_session",
+        kwargs={"slug": plan.slug, "pk": plan.id},
+    )
+    response = auth_client.post(url, {})
     assert mock_stripe_checkout.Session.create.called is False
     assert response.status_code == 302
 
@@ -224,3 +234,7 @@ def test_link_event_to_user(client, user, session):
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()
     assert event.user == user
+
+
+def test_get_checkout_session(client, user):
+    """GET to the CreateCheckoutSession endpoint will"""

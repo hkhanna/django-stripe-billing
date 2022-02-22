@@ -79,17 +79,18 @@
 
 ## Usage
 - `POST` to `billing:create_checkout_session` to create a Stripe Checkout Session.
-  - Form data must contain `plan_id` which is the pk of the paid billing plan.
+  - You must include 2 kwargs of a slugified plan name `slug` and the plan `pk`.
+  - We require both to enhance the privacy of private paid plans.
 - `POST` to `billing:create_portal_session` to create a Stripe Billing Portal Session.
   - Form data must contain `return_url` which is the URL to go back to once the Customer is done with the Portal. If this is omitted, it defaults to the `LOGIN_REDIRECT_URL`.
 - A `BillingMixin` is available in `billing.mixins.BillingMixin`. This defines a `get_context_data(self, **kwargs)` method that returns the following context:
   - `billing_enabled` is a convenience check for whether billing is enabled.
-  - `stripe_session_url` for the form button to take you to the Stripe Checkout/Portal.
+  - `stripe_session_url` for the form button to take you to the Stripe Checkout/Portal for the `PAID_PUBLIC` plan.
   - `stripe_session_button_text` text for the button describing what it will do.
   - `billing_state_note` describes basic info about the Customer's current subscription status.
   - `current_plan` the the instance of the Customer's Plan. `current_plan.name` and `current_plan.display_price` are useful if you want to display those things to the user.
   - `stripe_session_type` is either `checkout` or `portal` or None (if it's not showing a Stripe url at all).
-  - `paid_plan_id` is the pk of the first Paid Plan found in the database. It's only available if the user can sign up for a new paid plan.
+- To do `PAID_PRIVATE` plans, just `POST` to the appropriate `billing:create_checkout_session` URL, which stays private because you need to pass both the slug and the pk.
 
 ### Things to Know
 - The app should automatically create a Default Free plan during installation.
@@ -146,11 +147,12 @@ relationship with the `Limit` named `Max Emails`. In the through model, `PlanLim
 So far, so good. But what if your `Plan` forgets to set one of the `Limits`? What's the value of the `Limit` for that `Plan`? For that reason, each `Limit` also defines a `default` value that is used if a `Plan` hasn't set
 that particular `Limit`.
 
-`Plans` can be one of three types: `free_default`, `free_private`, and `paid_public`.
+`Plans` can be one of four types: `free_default`, `free_private`, `paid_public`, `paid_private`.
 
 - There must at all times be exactly one `free_default Plan`. This is the plan that a user defaults to when they create an account. Or if their credit card doesn't go through. It's the 'fallback' plan when no other plan has been selected. If you have a free tier, it would be sensible to configure it as this plan. This plan must be free and does not interface with Stripe.
 - A `free_private` plan is a plan that you can assign staff to have free access at a paid level or with some higher than normal limits.
-- A `paid_public` plan must have a corresponding `price_id` in Stripe and is the only type of `Plan` that interfaces with Stripe.
+- A `paid_public` plan must have a corresponding `price_id` in Stripe.
+- A `paid_private` plan must have a corresponding `price_id` in Stripe.
 
 **`free_default` versus `Limit` defaults**. A source of confusion can be what is the difference between the limit values configured in the `free_default Plan` and the defaults set on the `Limit` instances themselves? The `Limit` defaults attach when _any_ `Plan` does not define a value for _that particular `Limit`_. There has to be some value for a `Limit` in, say, a paid `Plan` even when that `Plan` does not specifically define the `Limit`.
 
@@ -160,7 +162,9 @@ Practically speaking, the real reason `Limits` have defaults is because there is
 
 There must always be one and only one `free_default Plan`. It's created in a data migration and this condition is enforced via a database constraint.
 
-A `paid_public` plan is subscribable by users. The others are not.
+A `paid_public` plan is subscribable by all users. 
+
+A `paid_private` plan is subscribable by a user only by given access to a specific link to do so. 
 
 ### Customer Model
 
@@ -194,7 +198,6 @@ You can see what they are in `billing.models`. This can be improved and should p
 ## Possible Future Enhancements
 
 - Multiple paid plans. Will need to write tests to upgrade/downgrade plans and those should be their own endpoints probably.
-- Paid private plans, e.g., for grandfathering in pricing.
 - Grace periods for expired payments
 - Trial periods
 - Coupons for friends

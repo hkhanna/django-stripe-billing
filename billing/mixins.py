@@ -1,3 +1,4 @@
+from django.urls import reverse
 from django.utils import timezone
 from . import models
 
@@ -45,14 +46,16 @@ class BillingMixin:
             "free_default.new",
             "free_private.expired",
         ):
-            ctx["stripe_session_url"] = "billing:create_checkout_session"
             paid_plan = models.Plan.objects.filter(
                 type=models.Plan.Type.PAID_PUBLIC
             ).first()
-            # Don't use this Mixin if you have not created a Paid plan.
+            ctx["stripe_session_url"] = reverse(
+                "billing:create_checkout_session",
+                kwargs={"slug": paid_plan.slug, "pk": paid_plan.pk},
+            )
+            # Don't use this Mixin if you have not created a PAID_PUBLIC plan.
             if not paid_plan:
                 return {"billing_enabled": False}
-            ctx["paid_plan_id"] = paid_plan.id
             ctx["stripe_session_button_text"] = "Upgrade to Paid Plan"
             ctx["stripe_session_type"] = "checkout"
         elif state in (

@@ -5,7 +5,7 @@ from . import views
 app_name = "billing"
 urlpatterns = [
     path(
-        "create-checkout-session/",
+        "create-checkout-session/<slug:slug>/<int:pk>/",
         views.CreateCheckoutSessionView.as_view(),
         name="create_checkout_session",
     ),

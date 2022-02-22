@@ -140,9 +140,7 @@ def process_stripe_event(event_id, verify_signature=True):
 
             # Get the Plan the Customer signed up for.
             price_id = session.line_items["data"][0]["price"]["id"]
-            plan = models.Plan.objects.get(
-                price_id=price_id, type=models.Plan.Type.PAID_PUBLIC
-            )
+            plan = models.Plan.objects.get(price_id=price_id)
 
             # Set customer_id if not already set.
             # Otherwise, confirm the customer_id matches the one on the User.Customer.

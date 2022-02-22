@@ -4,6 +4,7 @@ from django.db import models
 from django.db.models import CheckConstraint, Q, UniqueConstraint
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.text import slugify
 
 from . import services
 
@@ -37,15 +38,14 @@ class Plan(models.Model):
         unique=True,
         max_length=254,
         verbose_name="Stripe Price ID.",
-        help_text="Paid plans must set this and it may only be set if the Plan's type is Paid.",
+        help_text="Paid plans must set this and it may only be set if the Plan's type is paid.",
     )
 
-    # Someday, will add a PAID_PRIVATE plan but will need to find a way to subscribe the Customer in the admin
-    # which will then reach out to Stripe.
     class Type(models.TextChoices):
         FREE_DEFAULT = "free_default", "Free (Default)"
         FREE_PRIVATE = "free_private", "Free (Private)"  # Staff plans
         PAID_PUBLIC = "paid_public", "Paid (Public)"
+        PAID_PRIVATE = "paid_private", "Paid (Private)"  # Grandfathered or custom plans
 
     type = models.CharField(
         max_length=254,
@@ -56,9 +56,15 @@ class Plan(models.Model):
 
     def clean(self):
         # This is in a clean method because this is only configured via the admin.
-        if self.price_id and self.type != Plan.Type.PAID_PUBLIC:
+        if self.price_id and self.type not in (
+            Plan.Type.PAID_PUBLIC,
+            Plan.Type.PAID_PRIVATE,
+        ):
             raise ValidationError({"type": "Plans with a price_id must be paid."})
-        if self.type == Plan.Type.PAID_PUBLIC and not self.price_id:
+        if (
+            self.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
+            and not self.price_id
+        ):
             raise ValidationError({"price_id": "Paid plans must have a price_id."})
         if (
             self.type == Plan.Type.FREE_DEFAULT
@@ -77,9 +83,13 @@ class Plan(models.Model):
         ):
             raise ValidationError(
                 {
-                    "type": "There already exists a Paid (Public) plan. Multiple paid plans not available yet."
+                    "type": "There already exists a Paid (Public) plan. Multiple public paid plans not available yet."
                 }
             )
+
+    @property
+    def slug(self):
+        return slugify(self.name)
 
     def __str__(self):
         return self.name
@@ -180,7 +190,7 @@ class Customer(models.Model):
             return "free_default.canceled.missed_webhook"
 
         if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
+            self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.current_period_end is not None
             and self.current_period_end > timezone.now()
             and self.payment_state == Customer.PaymentState.OK
@@ -190,7 +200,7 @@ class Customer(models.Model):
             return "paid.paying"
 
         if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
+            self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.current_period_end is not None
             and self.current_period_end > timezone.now()
             and self.payment_state == Customer.PaymentState.OFF
@@ -231,7 +241,7 @@ class Customer(models.Model):
             return "free_private.expired"
 
         if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
+            self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.payment_state == Customer.PaymentState.REQUIRES_PAYMENT_METHOD
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
@@ -243,7 +253,7 @@ class Customer(models.Model):
             return "free_default.past_due.requires_payment_method"
 
         if (
-            self.plan.type == Plan.Type.PAID_PUBLIC
+            self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.payment_state == Customer.PaymentState.REQUIRES_PAYMENT_METHOD
             and self.current_period_end is not None
             and self.current_period_end >= timezone.now()
@@ -284,11 +294,12 @@ class Customer(models.Model):
         if plan_expired:
             # If the Plan is expired, use the values from the free_default plan
             plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
-        elif (
-            self.current_period_end is None and self.plan.type == Plan.Type.PAID_PUBLIC
+        elif self.current_period_end is None and self.plan.type in (
+            Plan.Type.PAID_PUBLIC,
+            Plan.Type.PAID_PRIVATE,
         ):
-            # If current_period_end is None, use the values from the free_default plan if the user's plan is PAID_PUBLIC.
-            # I.e., paid_public plans with current_period_end are incomplete and use the free_default limits
+            # If current_period_end is None, use the values from the free_default plan if the user's plan is paid.
+            # I.e., paid plans with no current_period_end are incomplete and use the free_default limits
             # and free_private plans without current_period_end exist indefinitely.
             plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
 
