@@ -14,12 +14,8 @@
     <p>Your plan: {{current_plan.name}} $({{current_plan.display_price}})</p>
     <p>{{ billing_state_note }}</p>
     {% if stripe_session_url %}
-    <form action={% url stripe_session_url %} method="POST">
+    <form action="{{ stripe_session_url }}" method="POST">
     {% csrf_token %}
-      {% if paid_plan_name and paid_plan_id %}
-        <input type="hidden" name="plan_name" value="{{paid_plan_name}}" />
-        <input type="hidden" name="plan_id" value="{{paid_plan_id}}" />
-      {% endif %}
       <button type="submit">{{stripe_session_button_text}}</button>
     </form>
     {% endif %}

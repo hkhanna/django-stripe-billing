@@ -79,18 +79,18 @@
 
 ## Usage
 - `POST` to `billing:create_checkout_session` to create a Stripe Checkout Session.
-  - Form data must contain `plan_name` and `plan_id` which is the pk of the paid billing plan.
+  - You must include 2 kwargs of a slugified plan name `slug` and the plan `pk`.
   - We require both to enhance the privacy of private paid plans.
 - `POST` to `billing:create_portal_session` to create a Stripe Billing Portal Session.
   - Form data must contain `return_url` which is the URL to go back to once the Customer is done with the Portal. If this is omitted, it defaults to the `LOGIN_REDIRECT_URL`.
 - A `BillingMixin` is available in `billing.mixins.BillingMixin`. This defines a `get_context_data(self, **kwargs)` method that returns the following context:
   - `billing_enabled` is a convenience check for whether billing is enabled.
-  - `stripe_session_url` for the form button to take you to the Stripe Checkout/Portal.
+  - `stripe_session_url` for the form button to take you to the Stripe Checkout/Portal for the `PAID_PUBLIC` plan.
   - `stripe_session_button_text` text for the button describing what it will do.
   - `billing_state_note` describes basic info about the Customer's current subscription status.
   - `current_plan` the the instance of the Customer's Plan. `current_plan.name` and `current_plan.display_price` are useful if you want to display those things to the user.
   - `stripe_session_type` is either `checkout` or `portal` or None (if it's not showing a Stripe url at all).
-  - `paid_plan_name`  and `paid_plan_id` are the name pk, respectively, of the first `PAID_PUBLIC` plan found in the database.
+- To do `PAID_PRIVATE` plans, just `POST` to the appropriate `billing:create_checkout_session` URL, which stays private because you need to pass both the slug and the pk.
 
 ### Things to Know
 - The app should automatically create a Default Free plan during installation.

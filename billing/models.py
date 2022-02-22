@@ -4,6 +4,7 @@ from django.db import models
 from django.db.models import CheckConstraint, Q, UniqueConstraint
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.text import slugify
 
 from . import services
 
@@ -85,6 +86,10 @@ class Plan(models.Model):
                     "type": "There already exists a Paid (Public) plan. Multiple public paid plans not available yet."
                 }
             )
+
+    @property
+    def slug(self):
+        return slugify(self.name)
 
     def __str__(self):
         return self.name
