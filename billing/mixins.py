@@ -63,11 +63,11 @@ class BillingMixin:
             "paid.past_due.requires_payment_method",
             "paid.paying",
         ):
-            ctx["stripe_session_url"] = "billing:create_portal_session"
+            ctx["stripe_session_url"] = reverse("billing:create_portal_session")
             ctx["stripe_session_button_text"] = "Update or Cancel Plan"
             ctx["stripe_session_type"] = "portal"
         elif state == "paid.will_cancel":
-            ctx["stripe_session_url"] = "billing:create_portal_session"
+            ctx["stripe_session_url"] = reverse("billing:create_portal_session")
             ctx["stripe_session_button_text"] = "Reactivate Paid Plan"
             ctx["stripe_session_type"] = "portal"
         ctx["billing_state_note"] = self.state_note(customer)
