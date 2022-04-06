@@ -1,5 +1,6 @@
 Unreleased
 ----------------------
+- _Backwards incompatible change_: You should no longer listen to `checkout.session.completed`.
 
 0.4.1
 ----------------------

@@ -25,18 +25,13 @@ def _preprocess_payload_type(event):
     data_object = payload["data"]["object"]
     event.type = EVENT_TYPE.UNKNOWN
 
-    # checkout.session.completed
-    if payload["type"] == "checkout.session.completed":
-        event.type = EVENT_TYPE.NEW_SUB
-        event.primary = True
-
     # invoice.paid -> new or renewed subscription
-    elif payload["type"] == "invoice.paid":
+    if payload["type"] == "invoice.paid":
         # billing_reason=subscription_cycle means its a renewal, not a new subscription.
         # See https://stackoverflow.com/questions/22601521/stripe-webhook-events-renewal-of-subscription
         if data_object["billing_reason"] == "subscription_create":
             event.type = EVENT_TYPE.NEW_SUB
-            event.primary = False  # TODO true in the next phase
+            event.primary = True
         elif data_object["billing_reason"] == "subscription_cycle":
             event.type = EVENT_TYPE.RENEW_SUB
             event.primary = True
@@ -51,7 +46,7 @@ def _preprocess_payload_type(event):
         # payment failure when the subscription is incomplete on setup.
         if data_object["billing_reason"] == "subscription_create":
             event.type = EVENT_TYPE.NEW_SUB
-            event.primary = False  # TODO: This will be true in the next phase.
+            event.primary = True
         if data_object["billing_reason"] == "subscription_cycle":
             event.type = EVENT_TYPE.PAYMENT_FAIL
             event.primary = True
@@ -130,20 +125,14 @@ def _preprocess_payload_type(event):
 def _preprocess_type_info(event, data_object):
     info = {}
 
-    # No info necessary for non-primary events
     if not event.primary:
-        event.info = info
-        return info
-
-    if event.type == EVENT_TYPE.NEW_SUB:
-        info["obj"] = "session"
-        info["session_id"] = data_object["id"]
-        info["subscription_id"] = data_object["subscription"]
-        info["user_pk"] = data_object["client_reference_id"]
-    elif event.type == EVENT_TYPE.RENEW_SUB:
+        # No info necessary for non-primary events
+        pass
+    elif event.type in (EVENT_TYPE.NEW_SUB, EVENT_TYPE.RENEW_SUB):
         info["obj"] = "invoice"
         info["subscription_id"] = data_object["subscription"]
         info["billing_reason"] = data_object["billing_reason"]
+        info["price_id"] = data_object["lines"]["data"][0]["plan"]["id"]
         info["period_end_ts"] = data_object["lines"]["data"][0]["period"]["end"]
     elif event.type == EVENT_TYPE.PAYMENT_FAIL:
         info["obj"] = "invoice"
@@ -218,17 +207,11 @@ def process_stripe_event(event_id, verify_signature=True):
 
         # Successful checkout session
         elif event.type == EVENT_TYPE.NEW_SUB:
-            session_id = info["session_id"]
-            session = stripe.checkout.Session.retrieve(
-                session_id,
-                expand=["customer", "line_items", "subscription"],
-            )
-            subscription = session.subscription
-
             # Get the Plan the Customer signed up for.
-            price_id = session.line_items["data"][0]["price"]["id"]
+            price_id = info["price_id"]
             plan = models.Plan.objects.get(price_id=price_id)
 
+            """ TODO
             # Set customer_id if not already set.
             # Otherwise, confirm the customer_id matches the one on the User.Customer.
             if not customer.customer_id:
@@ -240,14 +223,13 @@ def process_stripe_event(event_id, verify_signature=True):
                     f"User.id={user.id} has a customer_id of {customer.customer_id} but the session customer_id is {session.customer.id}."
                 )
                 customer.customer_id = session.customer.id
-
-            customer.subscription_id = subscription.id
+            """
+            customer.subscription_id = info["subscription_id"]
             customer.plan = plan
-            if subscription.status == "active":
-                customer.current_period_end = dt.fromtimestamp(
-                    subscription.current_period_end, tz=timezone.utc
-                )
-                customer.payment_state = models.Customer.PaymentState.OK
+            customer.current_period_end = dt.fromtimestamp(
+                info["period_end_ts"], tz=timezone.utc
+            )
+            customer.payment_state = models.Customer.PaymentState.OK
 
             event.status = models.StripeEvent.Status.PROCESSED
 

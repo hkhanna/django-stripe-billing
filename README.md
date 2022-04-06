@@ -42,7 +42,6 @@
 1. Update the branding of Checkout/Portal to match the branding of your site.
 1. In your Stripe dashboard, set up a product (with an optional statement descriptor), and set up a price for that product.
 1. In the Stripe dashboard, the following webhooks should be set to point to `https://production.url/billing/stripe/webhook/`:
-    - `checkout.session.completed` 
     - `invoice.paid`
     - `invoice.payment_failed`
     - `customer.subscription.updated`
