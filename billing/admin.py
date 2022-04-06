@@ -38,7 +38,8 @@ class StripeEventAdmin(admin.ModelAdmin):
     list_select_related = ["user"]
     list_display = [
         "__str__",
-        "primary" "payload_type",
+        "primary",
+        "payload_type",
         "user",
         "status",
         "received_at",
