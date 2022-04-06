@@ -211,8 +211,10 @@ def _integrity_checks(event):
         )
 
     # The event's subscription_id must match the one on the customer
+    # Only do this if it's non primary since a subscription mismatch can happen on an incomplete_expired.
     if (
         customer.subscription_id
+        and event.primary
         and customer.subscription_id != event.info["subscription_id"]
     ):
         logger.error(
