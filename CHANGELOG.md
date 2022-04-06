@@ -1,5 +1,7 @@
 Unreleased
 ----------------------
+- Automatically retry failed invoices when a customer updates their subscription payment method.
+- Fix a bug where if a customer's payment failed and you renewed it, the state was messed up.
 - _Backwards incompatible change_: You should no longer listen to `checkout.session.completed`.
 
 0.4.1
