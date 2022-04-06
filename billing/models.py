@@ -323,10 +323,11 @@ class StripeEvent(models.Model):
         NEW_SUB = "new_sub", "New Subscription"
         RENEW_SUB = "renew_sub", "Renew Subscription"
         PAYMENT_FAIL = "payment_fail", "Payment Failure"
-        PAYMENT_FIX = (
-            "payment_fix",
-            "Payment Fix",
-        )  # TODO add handling and tests for this
+        UPDATE_PAYMENT_METHOD = "update_payment_method", "Update Payment Method"
+        FIX_PAYMENT_METHOD = (
+            "fix_payment_method",
+            "Fix Payment Method",
+        )
         CANCEL_SUB = "cancel_sub", "Cancel Subscription"
         REACTIVATE_SUB = "reactivate_sub", "Reactivate Subscription"
         DELETE_SUB = "delete_sub", "Delete Subscription"

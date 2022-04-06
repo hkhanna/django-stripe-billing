@@ -44,10 +44,8 @@ def _preprocess_payload_type(event):
         # You need the billing reason here too. Otherwise it tracks a
         # payment failure when the subscription is incomplete on setup.
         if data_object["billing_reason"] == "subscription_create":
-            event.type = (
-                EVENT_TYPE.PAYMENT_FAIL
-            )  # TODO: ugh this is like a combo of New sub & payment fail
-            event.primary = True
+            event.type = EVENT_TYPE.NEW_SUB
+            event.primary = False
         if data_object["billing_reason"] == "subscription_cycle":
             event.type = EVENT_TYPE.PAYMENT_FAIL
             event.primary = True
@@ -101,9 +99,22 @@ def _preprocess_payload_type(event):
             event.type = EVENT_TYPE.PAYMENT_FAIL
             event.primary = False
 
+        # Payment method update where there's been no failure
+        elif prev.get("default_payment_method") and data_object["status"] == "active":
+            event.type = EVENT_TYPE.UPDATE_PAYMENT_METHOD
+            event.primary = True  # This doesn't do anything even though its primary.
+
+        # Payment method fix, i.e., where there's been a failure
+        elif prev.get("default_payment_method") and data_object["status"] in (
+            "incomplete",
+            "past_due",
+        ):
+            event.type = EVENT_TYPE.FIX_PAYMENT_METHOD
+            event.primary = True
+
         # Payment fix success
         elif prev.get("status") == "past_due" and data_object["status"] == "active":
-            event.type = EVENT_TYPE.PAYMENT_FIX
+            event.type = EVENT_TYPE.FIX_PAYMENT_METHOD
             event.primary = False
 
         else:
@@ -253,6 +264,16 @@ def process_stripe_event(event_id, verify_signature=True):
             customer.payment_state = (
                 models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
             )
+            event.status = models.StripeEvent.Status.PROCESSED
+
+        # Payment method update where there's been no failure
+        elif event.type == EVENT_TYPE.UPDATE_PAYMENT_METHOD:
+            # This is a noop
+            event.status = models.StripeEvent.Status.PROCESSED
+
+        # Payment method fix, i.e., where there's been a failure
+        elif event.type == EVENT_TYPE.FIX_PAYMENT_METHOD:
+            services.stripe_retry_latest_invoice(customer.customer_id)
             event.status = models.StripeEvent.Status.PROCESSED
 
         # Cancelation

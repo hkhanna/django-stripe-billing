@@ -271,3 +271,64 @@ def test_user_not_found(client, mock_stripe_customer):
     assert event.status == models.StripeEvent.Status.ERROR
     assert event.user == None
     assert "Customer.DoesNotExist" in event.note
+
+
+def test_payment_update_active(client, customer):
+    """An update to a Subscription's payment method does not do anything if the Subscription is
+    active."""
+    url = reverse("billing:stripe_webhook")
+
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub",
+                "customer": "cus",
+                "cancel_at_period_end": False,
+                "status": "active",
+            },
+            "previous_attributes": {"default_payment_method": "pm_something"},
+        },
+    }
+
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.type == models.StripeEvent.Type.UPDATE_PAYMENT_METHOD
+    assert event.status == models.StripeEvent.Status.PROCESSED
+    assert event.user.customer == customer
+
+
+@pytest.mark.parametrize("status", ["incomplete", "past_due"])
+def test_payment_update_and_retry(client, customer, status, mock_stripe_invoice):
+    """An update to a Subscription's payment method when not active automatically retries the last open invoice."""
+    mock_stripe_invoice.list.return_value = {
+        "data": [{"status": "open", "id": "inv_123"}]
+    }
+    url = reverse("billing:stripe_webhook")
+
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub",
+                "customer": "cus",
+                "cancel_at_period_end": False,
+                "status": status,
+            },
+            "previous_attributes": {"default_payment_method": "pm_something"},
+        },
+    }
+
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.type == models.StripeEvent.Type.FIX_PAYMENT_METHOD
+    assert event.status == models.StripeEvent.Status.PROCESSED
+    assert event.user.customer == customer
+    assert mock_stripe_invoice.list.call_count == 1
+    assert mock_stripe_invoice.pay.call_count == 1
