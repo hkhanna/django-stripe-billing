@@ -9,6 +9,7 @@ from .. import factories, models, settings
 def user(upcoming_period_end):
     user = factories.UserFactory(
         paying=True,
+        customer__customer_id="cus",
         customer__subscription_id="sub",
         customer__current_period_end=upcoming_period_end,
     )
@@ -65,7 +66,12 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
         "object": "event",
         "type": "customer.subscription.updated",
         "data": {
-            "object": {"id": "sub", "status": "active", "cancel_at_period_end": True},
+            "object": {
+                "id": "sub",
+                "customer": "cus",
+                "status": "active",
+                "cancel_at_period_end": True,
+            },
             "previous_attributes": {"cancel_at_period_end": False},
         },
     }
@@ -82,7 +88,12 @@ def test_cancel_subscription(client, customer, mock_stripe_subscription):
         "object": "event",
         "type": "customer.subscription.deleted",
         "data": {
-            "object": {"id": "sub", "status": "canceled", "cancel_at_period_end": False}
+            "object": {
+                "id": "sub",
+                "customer": "cus",
+                "status": "canceled",
+                "cancel_at_period_end": False,
+            }
         },
     }
     client.post(url, payload, content_type="application/json")
@@ -104,7 +115,12 @@ def test_cancel_subscription_immediately(client, customer, mock_stripe_subscript
         "object": "event",
         "type": "customer.subscription.deleted",
         "data": {
-            "object": {"id": "sub", "status": "canceled", "cancel_at_period_end": False}
+            "object": {
+                "id": "sub",
+                "customer": "cus",
+                "status": "canceled",
+                "cancel_at_period_end": False,
+            }
         },
     }
     client.post(url, payload, content_type="application/json")
@@ -124,7 +140,12 @@ def test_reactivate_subscription(client, customer):
         "object": "event",
         "type": "customer.subscription.updated",
         "data": {
-            "object": {"id": "sub", "status": "active", "cancel_at_period_end": False},
+            "object": {
+                "id": "sub",
+                "customer": "cus",
+                "status": "active",
+                "cancel_at_period_end": False,
+            },
             "previous_attributes": {"cancel_at_period_end": True},
         },
     }

@@ -149,92 +149,84 @@ def test_create_subscription_changed_email(
     assert mock_stripe_customer.modify.call_args.kwargs["email"] == user.email
 
 
-def test_webhook_create_subscription(
-    client, user, paid_plan, session, mock_stripe_checkout
-):
-    """checkout.session.completed should set the customer_id, plan, current_period_end,
-    payment_state and card_info"""
+def test_webhook_create_subscription(client, customer, paid_plan, mock_stripe_customer):
+    """invoice.paid should set the customer_id, plan, current_period_end, payment_state"""
+    mock_period_end = (timezone.now() + timedelta(days=30)).timestamp()
+    mock_stripe_customer.retrieve.return_value.email = customer.user.email
+
     url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
-        "type": "checkout.session.completed",
+        "type": "invoice.paid",
         "data": {
             "object": {
-                "id": factories.id("sess"),
-                "subscription": factories.id("sub"),
-                "client_reference_id": user.pk,
+                "billing_reason": "subscription_create",
+                "customer": "cus",
+                "subscription": "sub",
+                "lines": {
+                    "data": [
+                        {
+                            "plan": {"id": paid_plan.price_id},
+                            "period": {"end": mock_period_end},
+                        }
+                    ]
+                },
             }
         },
     }
+
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
-    assert mock_stripe_checkout.Session.retrieve.call_count == 1
 
-    user.refresh_from_db()
-    assert paid_plan == user.customer.plan
-    assert user.customer.customer_id == session.customer.id
-    assert user.customer.payment_state == models.Customer.PaymentState.OK
-    assert (
-        session.subscription.current_period_end
-        == user.customer.current_period_end.timestamp()
-    )
-    assert "sub_paid" == user.customer.subscription_id
-    assert "paid.paying" == user.customer.state
+    customer.refresh_from_db()
+    assert paid_plan == customer.plan
+    assert customer.customer_id == "cus"
+    assert customer.payment_state == models.Customer.PaymentState.OK
+    assert mock_period_end == customer.current_period_end.timestamp()
+    assert "sub" == customer.subscription_id
+    assert "paid.paying" == customer.state
     assert (
         models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
     )
 
 
 def test_webhook_create_subscription_mismatched_customer_id(
-    client, user, session, mock_stripe_checkout
+    client, customer, paid_plan, mock_stripe_customer, caplog
 ):
-    """A mismatched customer_id returned from the Session should log an error and update the User's customer_id."""
+    """A mismatched customer_id from the webhook should log an error and update the User's customer_id."""
+    mock_period_end = (timezone.now() + timedelta(days=30)).timestamp()
+    mock_stripe_customer.retrieve.return_value.email = customer.user.email
     url = reverse("billing:stripe_webhook")
-    user.customer.customer_id = "cus_mismatch"
-    user.customer.save()
+    customer.customer_id = "cus_mismatch"
+    customer.save()
     payload = {
         "id": "evt_test",
         "object": "event",
-        "type": "checkout.session.completed",
+        "type": "invoice.paid",
         "data": {
             "object": {
-                "id": factories.id("sess"),
-                "subscription": factories.id("sub"),
-                "client_reference_id": user.pk,
+                "billing_reason": "subscription_create",
+                "customer": "cus",
+                "subscription": "sub",
+                "lines": {
+                    "data": [
+                        {
+                            "plan": {"id": paid_plan.price_id},
+                            "period": {"end": mock_period_end},
+                        }
+                    ]
+                },
             }
         },
     }
-    response = client.post(url, payload, content_type="application/json")
+
+    with caplog.at_level("ERROR"):
+        response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
-    assert mock_stripe_checkout.Session.retrieve.call_count == 1
-    user.refresh_from_db()
-    assert user.customer.customer_id == session.customer.id
+    customer.refresh_from_db()
+    assert customer.customer_id == "cus"
     assert (
         models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
     )
-
-
-def test_link_event_to_user(client, user, session):
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "checkout.session.completed",
-        "data": {
-            "object": {
-                "id": factories.id("sess"),
-                "subscription": factories.id("sub"),
-                "client_reference_id": user.pk,
-            }
-        },
-    }
-
-    response = client.post(url, payload, content_type="application/json")
-    assert response.status_code == 201
-    event = models.StripeEvent.objects.first()
-    assert event.user == user
-
-
-def test_get_checkout_session(client, user):
-    """GET to the CreateCheckoutSession endpoint will"""
+    assert len(caplog.records) == 1

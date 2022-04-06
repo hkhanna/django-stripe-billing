@@ -6,7 +6,6 @@ import traceback
 import stripe
 
 from django.utils import timezone
-from django.contrib.auth import get_user_model
 
 from . import models, settings, services
 
@@ -45,7 +44,9 @@ def _preprocess_payload_type(event):
         # You need the billing reason here too. Otherwise it tracks a
         # payment failure when the subscription is incomplete on setup.
         if data_object["billing_reason"] == "subscription_create":
-            event.type = EVENT_TYPE.NEW_SUB
+            event.type = (
+                EVENT_TYPE.PAYMENT_FAIL
+            )  # TODO: ugh this is like a combo of New sub & payment fail
             event.primary = True
         if data_object["billing_reason"] == "subscription_cycle":
             event.type = EVENT_TYPE.PAYMENT_FAIL
@@ -125,31 +126,20 @@ def _preprocess_payload_type(event):
 def _preprocess_type_info(event, data_object):
     info = {}
 
-    if not event.primary:
-        # The only info necessary for non-primary events is the customer_id
-        info["customer_id"] = data_object["customer"]
-        info["subscription_id"] = data_object["subscription"]
-    elif event.type in (EVENT_TYPE.NEW_SUB, EVENT_TYPE.RENEW_SUB):
+    if event.payload_type.startswith("invoice."):
         info["obj"] = "invoice"
         info["customer_id"] = data_object["customer"]
         info["subscription_id"] = data_object["subscription"]
         info["billing_reason"] = data_object["billing_reason"]
         info["price_id"] = data_object["lines"]["data"][0]["plan"]["id"]
         info["period_end_ts"] = data_object["lines"]["data"][0]["period"]["end"]
-    elif event.type == EVENT_TYPE.PAYMENT_FAIL:
-        info["obj"] = "invoice"
-        info["customer_id"] = data_object["customer"]
-        info["subscription_id"] = data_object["subscription"]
-    elif event.type in (
-        EVENT_TYPE.CANCEL_SUB,
-        EVENT_TYPE.REACTIVATE_SUB,
-        EVENT_TYPE.DELETE_SUB,
-    ):
+    elif event.payload_type.startswith("customer.subscription."):
         info["obj"] = "subscription"
         info["customer_id"] = data_object["customer"]
         info["subscription_id"] = data_object["id"]
         info["subscription_status"] = data_object["status"]
         info["cancel_at_period_end"] = data_object["cancel_at_period_end"]
+
     event.info = info
     event.save()
     return info
