@@ -242,12 +242,12 @@ def process_stripe_event(event_id, verify_signature=True):
             # Get the Plan the Customer signed up for.
             price_id = info["price_id"]
             plan = models.Plan.objects.get(price_id=price_id)
-
             customer.subscription_id = info["subscription_id"]
             customer.plan = plan
-            customer.current_period_end = dt.fromtimestamp(
-                info["period_end_ts"], tz=timezone.utc
-            )
+
+            period_end_ts = info["period_end_ts"]
+            period_end = dt.fromtimestamp(period_end_ts, tz=timezone.utc)
+            customer.current_period_end = period_end
             customer.payment_state = models.Customer.PaymentState.OK
 
             event.status = models.StripeEvent.Status.PROCESSED
@@ -257,6 +257,8 @@ def process_stripe_event(event_id, verify_signature=True):
             period_end_ts = info["period_end_ts"]
             period_end = dt.fromtimestamp(period_end_ts, tz=timezone.utc)
             customer.current_period_end = period_end
+            customer.payment_state = models.Customer.PaymentState.OK
+
             event.status = models.StripeEvent.Status.PROCESSED
 
         # Payment failure
