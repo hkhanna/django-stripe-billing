@@ -1,6 +1,7 @@
 import json
 from datetime import datetime as dt
 import logging
+from re import T
 import traceback
 import stripe
 
@@ -9,7 +10,6 @@ from django.contrib.auth import get_user_model
 
 from . import models, settings, services
 
-User = get_user_model()
 EVENT_TYPE = models.StripeEvent.Type
 
 try:
@@ -126,16 +126,19 @@ def _preprocess_type_info(event, data_object):
     info = {}
 
     if not event.primary:
-        # No info necessary for non-primary events
-        pass
+        # The only info necessary for non-primary events is the customer_id
+        info["customer_id"] = data_object["customer"]
+        info["subscription_id"] = data_object["subscription"]
     elif event.type in (EVENT_TYPE.NEW_SUB, EVENT_TYPE.RENEW_SUB):
         info["obj"] = "invoice"
+        info["customer_id"] = data_object["customer"]
         info["subscription_id"] = data_object["subscription"]
         info["billing_reason"] = data_object["billing_reason"]
         info["price_id"] = data_object["lines"]["data"][0]["plan"]["id"]
         info["period_end_ts"] = data_object["lines"]["data"][0]["period"]["end"]
     elif event.type == EVENT_TYPE.PAYMENT_FAIL:
         info["obj"] = "invoice"
+        info["customer_id"] = data_object["customer"]
         info["subscription_id"] = data_object["subscription"]
     elif event.type in (
         EVENT_TYPE.CANCEL_SUB,
@@ -143,6 +146,7 @@ def _preprocess_type_info(event, data_object):
         EVENT_TYPE.DELETE_SUB,
     ):
         info["obj"] = "subscription"
+        info["customer_id"] = data_object["customer"]
         info["subscription_id"] = data_object["id"]
         info["subscription_status"] = data_object["status"]
         info["cancel_at_period_end"] = data_object["cancel_at_period_end"]
@@ -151,38 +155,64 @@ def _preprocess_type_info(event, data_object):
     return info
 
 
-def _preprocess_user(event):
-    # TODO
-    if event.primary is False:
-        return None, None
+def _preprocess_customer(event):
+    """When an event comes in, try to match on the customer_id. If it can't, try to
+    match on the email."""
 
-    if event.type == EVENT_TYPE.NEW_SUB:
-        event.user = User.objects.get(pk=event.info["user_pk"])
-    elif event.type in (
-        EVENT_TYPE.RENEW_SUB,
-        EVENT_TYPE.PAYMENT_FAIL,
-        EVENT_TYPE.CANCEL_SUB,
-        EVENT_TYPE.REACTIVATE_SUB,
-    ):
-        event.user = User.objects.get(
-            customer__subscription_id=event.info["subscription_id"]
-        )
-    elif event.type == EVENT_TYPE.DELETE_SUB:
-        # This will happen if we hard delete a user, so need to be prepared
-        # for a user to not exist.
-        event.user = User.objects.filter(
-            customer__subscription_id=event.info["subscription_id"]
+    try:
+        customer = models.Customer.objects.filter(
+            customer_id=event.info["customer_id"]
         ).first()
-        if not event.user:
+        if not customer:
+            # Couldn't find the user via customer_id, so try matching on email.
+            stripe_customer = stripe.Customer.retrieve(event.info["customer_id"])
+            customer = models.Customer.objects.get(user__email=stripe_customer.email)
+
+        event.user = customer.user
+        event.save()
+
+        # Set customer_id if not already set.
+        if not customer.customer_id:
+            customer.customer_id = event.info["customer_id"]
+            customer.save()
+
+        return customer
+
+    except models.Customer.DoesNotExist:
+        # If a user is being hard deleted, this will happen, so we need to be ok
+        # with a user not existing in that case.
+        if event.type == EVENT_TYPE.DELETE_SUB:
             logger.warning(
                 f"StripeEvent.id={event.id} could not locate a user who may have been hard deleted."
             )
-    else:
-        return None, None
+        else:
+            # Otherwise, it's a genuine error since we can't locate the user.
+            raise
 
-    event.save()
+
+def _integrity_checks(event):
     customer = event.user.customer
-    return event.user, customer
+
+    # The event's customer_id must match the one on the customer
+    if customer.customer_id != event.info["customer_id"]:
+        # This should never happen. If it does, log an error
+        # and update the customer_id for the User.Customer.
+        logger.error(
+            f"User.id={customer.user.id} has a customer_id of {customer.customer_id} but the event customer_id is {event.info['customer_id']}."
+        )
+        customer.customer_id = event.info["customer_id"]
+        customer.save()
+
+    # The event's subscription_id must match the one on the customer
+    if (
+        customer.subscription_id
+        and customer.subscription_id != event.info["subscription_id"]
+    ):
+        logger.error(
+            f"User.id={customer.user.id} has a subscription_id of {customer.subscription_id} but the event customer_id is {event.info['subscription_id']}."
+        )
+        customer.subscription_id = event.info["subscription_id"]
+        customer.save()
 
 
 def process_stripe_event(event_id, verify_signature=True):
@@ -199,7 +229,8 @@ def process_stripe_event(event_id, verify_signature=True):
 
         data_object = _preprocess_payload_type(event)
         info = _preprocess_type_info(event, data_object)
-        user, customer = _preprocess_user(event)
+        customer = _preprocess_customer(event)
+        _integrity_checks(event)
 
         # Non-primary events don't need any processing
         if event.primary is False:
@@ -211,19 +242,6 @@ def process_stripe_event(event_id, verify_signature=True):
             price_id = info["price_id"]
             plan = models.Plan.objects.get(price_id=price_id)
 
-            """ TODO
-            # Set customer_id if not already set.
-            # Otherwise, confirm the customer_id matches the one on the User.Customer.
-            if not customer.customer_id:
-                customer.customer_id = session.customer.id
-            elif customer.customer_id != session.customer.id:
-                # This should never happen. If it does, log an error
-                # and update the customer_id for the User.Customer.
-                logger.error(
-                    f"User.id={user.id} has a customer_id of {customer.customer_id} but the session customer_id is {session.customer.id}."
-                )
-                customer.customer_id = session.customer.id
-            """
             customer.subscription_id = info["subscription_id"]
             customer.plan = plan
             customer.current_period_end = dt.fromtimestamp(
