@@ -332,6 +332,7 @@ class StripeEvent(models.Model):
         REACTIVATE_SUB = "reactivate_sub", "Reactivate Subscription"
         DELETE_SUB = "delete_sub", "Delete Subscription"
         UNKNOWN = "unknown", "Unknown"
+        IGNORED = "ignored", "Ignored"  # TODO REMOVE after data migration
 
     type = models.CharField(max_length=254, blank=True)
     primary = models.BooleanField(
