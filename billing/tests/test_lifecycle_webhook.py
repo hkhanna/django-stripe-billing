@@ -52,6 +52,7 @@ def test_unrecognized_type(client):
     }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
+    assert models.StripeEvent.Type.UNKNOWN == models.StripeEvent.objects.first().type
     assert (
         models.StripeEvent.Status.IGNORED == models.StripeEvent.objects.first().status
     )
@@ -180,3 +181,30 @@ def test_link_event_to_user(client, customer):
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()
     assert event.user == customer.user
+
+
+def test_non_primary_events(client, customer):
+    """Non-primary events should get the correct type and user attached but be ignored."""
+    # TODO all the other ones
+
+    url = reverse("billing:stripe_webhook")
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub",
+                "cancel_at_period_end": False,
+                "status": "active",
+            },
+            "previous_attributes": {"status": "incomplete"},
+        },
+    }
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.type == models.StripeEvent.Type.NEW_SUB
+    assert event.primary is False
+    assert event.status == models.StripeEvent.Status.IGNORED
+    # TODO assert event.user == customer.user

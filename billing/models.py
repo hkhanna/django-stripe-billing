@@ -323,12 +323,19 @@ class StripeEvent(models.Model):
         NEW_SUB = "new_sub", "New Subscription"
         RENEW_SUB = "renew_sub", "Renew Subscription"
         PAYMENT_FAIL = "payment_fail", "Payment Failure"
+        PAYMENT_FIX = (
+            "payment_fix",
+            "Payment Fix",
+        )  # TODO add handling and tests for this
         CANCEL_SUB = "cancel_sub", "Cancel Subscription"
         REACTIVATE_SUB = "reactivate_sub", "Reactivate Subscription"
         DELETE_SUB = "delete_sub", "Delete Subscription"
-        IGNORED = "ignored", "Ignored"
+        UNKNOWN = "unknown", "Unknown"
 
     type = models.CharField(max_length=254, blank=True)
+    primary = models.BooleanField(
+        help_text="Is this the primary event for the event type?", default=False
+    )
     payload_type = models.CharField(max_length=254)
     received_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(

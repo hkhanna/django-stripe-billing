@@ -23,39 +23,118 @@ except ImportError:
 def _preprocess_payload_type(event):
     payload = json.loads(event.body)
     data_object = payload["data"]["object"]
-    event.type = EVENT_TYPE.IGNORED
+    event.type = EVENT_TYPE.UNKNOWN
+
+    # checkout.session.completed
     if payload["type"] == "checkout.session.completed":
         event.type = EVENT_TYPE.NEW_SUB
+        event.primary = True
+
+    # invoice.paid -> new or renewed subscription
     elif payload["type"] == "invoice.paid":
         # billing_reason=subscription_cycle means its a renewal, not a new subscription.
         # See https://stackoverflow.com/questions/22601521/stripe-webhook-events-renewal-of-subscription
-        if data_object["billing_reason"] == "subscription_cycle":
+        if data_object["billing_reason"] == "subscription_create":
+            event.type = EVENT_TYPE.NEW_SUB
+            event.primary = False  # TODO true in the next phase
+        elif data_object["billing_reason"] == "subscription_cycle":
             event.type = EVENT_TYPE.RENEW_SUB
+            event.primary = True
+        else:
+            # Other billing_reasons should not happen.
+            event.note = f"Unrecognized invoice.paid billing_reason: {data_object['billing_reason']}."
+        # TODO: Upgrading and downgrading subscriptions may generate a "subscription_update" billing reason.
+
+    # invoice.payment_failed -> payment isn't working (new or renewal)
     elif payload["type"] == "invoice.payment_failed":
         # You need the billing reason here too. Otherwise it tracks a
         # payment failure when the subscription is incomplete on setup.
+        if data_object["billing_reason"] == "subscription_create":
+            event.type = EVENT_TYPE.NEW_SUB
+            event.primary = False  # TODO: This will be true in the next phase.
         if data_object["billing_reason"] == "subscription_cycle":
             event.type = EVENT_TYPE.PAYMENT_FAIL
+            event.primary = True
+        else:
+            # Other billing_reasons should not happen.
+            event.note = f"Unrecognized invoice.payment_failed billing_reason: {data_object['billing_reason']}."
+        # TODO: Upgrading and downgrading subscriptions may generate a "subscription_update" billing reason.
+
+    # customer.subscription.updated
     elif payload["type"] == "customer.subscription.updated":
         prev = payload["data"]["previous_attributes"]
+        # Cancelation
         if (
             data_object["cancel_at_period_end"] is True
             and prev.get("cancel_at_period_end") is False
         ):
             event.type = EVENT_TYPE.CANCEL_SUB
+            event.primary = True
+
+        # Reactivation
         elif (
             data_object["cancel_at_period_end"] is False
             and prev.get("cancel_at_period_end") is True
         ):
             event.type = EVENT_TYPE.REACTIVATE_SUB
+            event.primary = True
+
+        # Renewal attempt (may ultimately fail or succeed)
+        elif set(prev.keys()) == {
+            "current_period_end",
+            "current_period_start",
+            "latest_invoice",
+        }:
+            event.type = EVENT_TYPE.RENEW_SUB
+            event.primary = False
+
+        # Subscription status changes are all non-primary events
+        # The statuses `incomplete_expired` and `canceled` should not appear since those would only
+        # come through the customer.subscription.deleted hook.
+        # And we don't currently use `trialing` or `unpaid`.
+
+        # Initial signup success: incomplete -> active
+        # Can also occur if there's an initial failure followed by a payment repair, but there's no good way to
+        # distinguish those here and it doesn't really matter anyway.
+        elif prev.get("status") == "incomplete" and data_object["status"] == "active":
+            event.type = EVENT_TYPE.NEW_SUB
+            event.primary = False
+
+        # Renewal failure
+        elif prev.get("status") == "active" and data_object["status"] == "past_due":
+            event.type = EVENT_TYPE.PAYMENT_FAIL
+            event.primary = False
+
+        # Payment fix success
+        elif prev.get("status") == "past_due" and data_object["status"] == "active":
+            event.type = EVENT_TYPE.PAYMENT_FIX
+            event.primary = False
+
+        else:
+            event.note = f"Unrecognized customer.subscription.updated payload"
+
+    # customer.subscription.deleted
     elif payload["type"] == "customer.subscription.deleted":
         event.type = EVENT_TYPE.DELETE_SUB
+        event.primary = True
+
+    if event.type == EVENT_TYPE.UNKNOWN:
+        logger.error(
+            f"StripeEvent.id={event.id} StripeEvent.payload_type={event.payload_type} Could not calculate StripeEvent.type"
+        )
+
     event.save()
     return data_object
 
 
 def _preprocess_type_info(event, data_object):
     info = {}
+
+    # No info necessary for non-primary events
+    if not event.primary:
+        event.info = info
+        return info
+
     if event.type == EVENT_TYPE.NEW_SUB:
         info["obj"] = "session"
         info["session_id"] = data_object["id"]
@@ -84,6 +163,10 @@ def _preprocess_type_info(event, data_object):
 
 
 def _preprocess_user(event):
+    # TODO
+    if event.primary is False:
+        return None, None
+
     if event.type == EVENT_TYPE.NEW_SUB:
         event.user = User.objects.get(pk=event.info["user_pk"])
     elif event.type in (
@@ -129,8 +212,12 @@ def process_stripe_event(event_id, verify_signature=True):
         info = _preprocess_type_info(event, data_object)
         user, customer = _preprocess_user(event)
 
+        # Non-primary events don't need any processing
+        if event.primary is False:
+            event.status = models.StripeEvent.Status.IGNORED
+
         # Successful checkout session
-        if event.type == EVENT_TYPE.NEW_SUB:
+        elif event.type == EVENT_TYPE.NEW_SUB:
             session_id = info["session_id"]
             session = stripe.checkout.Session.retrieve(
                 session_id,
