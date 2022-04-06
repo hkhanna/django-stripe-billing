@@ -23,6 +23,7 @@ def _preprocess_payload_type(event):
     payload = json.loads(event.body)
     data_object = payload["data"]["object"]
     event.type = EVENT_TYPE.UNKNOWN
+    event.save()
 
     # invoice.paid -> new or renewed subscription
     if payload["type"] == "invoice.paid":
@@ -117,6 +118,11 @@ def _preprocess_payload_type(event):
             event.type = EVENT_TYPE.FIX_PAYMENT_METHOD
             event.primary = False
 
+        # An incomplete subscription was never fixed
+        elif data_object["status"] == "incomplete_expired":
+            event.type = EVENT_TYPE.NEW_SUB
+            event.primary = False
+
         else:
             event.note = f"Unrecognized customer.subscription.updated payload"
 
@@ -124,6 +130,9 @@ def _preprocess_payload_type(event):
     elif payload["type"] == "customer.subscription.deleted":
         event.type = EVENT_TYPE.DELETE_SUB
         event.primary = True
+
+    else:
+        raise RuntimeError(f"Unrecognized payload_type {event.payload_type}")
 
     if event.type == EVENT_TYPE.UNKNOWN:
         logger.error(
@@ -196,13 +205,10 @@ def _integrity_checks(event):
 
     # The event's customer_id must match the one on the customer
     if customer.customer_id != event.info["customer_id"]:
-        # This should never happen. If it does, log an error
-        # and update the customer_id for the User.Customer.
+        # This should never happen.
         logger.error(
-            f"User.id={customer.user.id} has a customer_id of {customer.customer_id} but the event customer_id is {event.info['customer_id']}."
+            f"StripeEvent.id={event.id} User.id={customer.user.id} has a customer_id of {customer.customer_id} but the event customer_id is {event.info['customer_id']}."
         )
-        customer.customer_id = event.info["customer_id"]
-        customer.save()
 
     # The event's subscription_id must match the one on the customer
     if (
@@ -210,10 +216,8 @@ def _integrity_checks(event):
         and customer.subscription_id != event.info["subscription_id"]
     ):
         logger.error(
-            f"User.id={customer.user.id} has a subscription_id of {customer.subscription_id} but the event customer_id is {event.info['subscription_id']}."
+            f"StripeEvent.id={event.id} User.id={customer.user.id} has a subscription_id of {customer.subscription_id} but the event subscription_id is {event.info['subscription_id']}."
         )
-        customer.subscription_id = event.info["subscription_id"]
-        customer.save()
 
 
 def process_stripe_event(event_id, verify_signature=True):

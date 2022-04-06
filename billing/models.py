@@ -366,7 +366,9 @@ class StripeEvent(models.Model):
     )
 
     def __str__(self):
-        if self.type:
+        if self.type and self.primary:
             return StripeEvent.Type(self.type).label
+        elif self.type and not self.primary:
+            return StripeEvent.Type(self.type).label + "(Non-Primary)"
         else:
             return self.payload_type

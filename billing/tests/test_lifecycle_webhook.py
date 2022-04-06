@@ -60,6 +60,7 @@ def test_unrecognized_type(client, customer):
     assert 201 == response.status_code
     assert models.StripeEvent.Type.UNKNOWN == models.StripeEvent.objects.first().type
     assert models.StripeEvent.Status.ERROR == models.StripeEvent.objects.first().status
+    assert "Unrecognized payload_type" in models.StripeEvent.objects.first().note
 
 
 def test_renewed(client, customer):
