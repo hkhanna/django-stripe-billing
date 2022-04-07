@@ -42,8 +42,7 @@
 1. Update the branding of Checkout/Portal to match the branding of your site.
 1. In your Stripe dashboard, set up a product (with an optional statement descriptor), and set up a price for that product.
 1. In the Stripe dashboard, the following webhooks should be set to point to `https://production.url/billing/stripe/webhook/`:
-    - `invoice.paid`
-    - `invoice.payment_failed`
+    - `customer.subscription.created`
     - `customer.subscription.updated`
     - `customer.subscription.deleted`
 
@@ -100,8 +99,8 @@
 - All paid plans must have a Stripe `price_id`.
 - The app will automaticaly create a free_default plan the first time its needed if one doesn't exist and it will default to whatever defaults are specified in the Limits. You can modify the plan or even delete it, but there must always be 1 free_default plan and if there is not, the app will create it the next time it needs it.
 - A user with a paid plan that has expired will drop to the limits set in the free_default plan. 
-- A user with a free private (i.e. staff) plan that has expired will drop to the limits set in the free_default plan. A user with a free private plan where there
-  is no current_period_end set will be treated as NO expiration date on the plan and will continue to enjoy the free private plan indefinitely.
+- A user with a free private (i.e. staff) plan that has expired will drop to the limits set in the free_default plan. A user with a free private plan where there is no current_period_end set will be treated as NO expiration date on the plan and will continue to enjoy the free private plan indefinitely.
+- Incoming webhooks from Stripe are treated as authoritative, so if you have someone on a private free plan, for example, and a Stripe webhook for a paid plan comes in, it will use the latter. So be sure to make changes in Stripe to match whatever changes you make to a Customer in the admin.
 
 ## Local Development
 
@@ -124,13 +123,17 @@
 1. Run `stripe listen --forward-to localhost:8000/billing/stripe/webhook/`
 1. If you want to re-send an event: `stripe events resend evt_<evtid>`
 
+### Creating migrations
+
+To create a migration, run `DJANGO_SETTINGS_MODULE=billing.tests.settings django-admin makemigrations`.
+
 ### Deleting Test Data
 
 From time to time, you may want to delete all Stripe test data via the dashboard. If you do that, your API keys should remain the same and won't need to be updated. But you will need to create a product and price in the Stripe dashboard and update any paid `Plan` instances to reflect the new `price_ids`.
 
 ## Architecture and Models
 
-There are five models in this application: `Limit`, `Plan`, `PlanLimit`, `Customer`, and `StripeEvent`. We'll focus on the first four, as `StripeEvent` is for webhook processing.
+There are six models in this application: `Limit`, `Plan`, `PlanLimit`, `Customer`, `StripeSubscription`, and `StripeEvent`. We'll focus on the first five, as `StripeSubscription` is supposed to be a faithful representation of a Subscription on Stripe, and `StripeEvent` is for webhook processing.
 
 ### Limit, Plan, and PlanLimit Models
 
