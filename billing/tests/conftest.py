@@ -53,6 +53,14 @@ def mock_stripe_billing_portal(monkeypatch):
     return mock
 
 
+@pytest.fixture(autouse=True)
+def mock_stripe_invoice(monkeypatch):
+    """Fixture to monkeypatch stripe.Invoice.* methods"""
+    mock = Mock()
+    monkeypatch.setattr(stripe, "Invoice", mock)
+    return mock
+
+
 @pytest.fixture
 def user():
     return factories.UserFactory()

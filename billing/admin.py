@@ -38,13 +38,14 @@ class StripeEventAdmin(admin.ModelAdmin):
     list_select_related = ["user"]
     list_display = [
         "__str__",
+        "primary",
         "payload_type",
         "user",
         "status",
         "received_at",
         "event_actions",
     ]
-    list_filter = ["type", "status"]
+    list_filter = ["type", "primary", "status"]
     search_fields = ["user__email", "payload_type", "type"]
 
     @admin.display(description="Actions")
@@ -87,8 +88,8 @@ class StripeEventAdmin(admin.ModelAdmin):
 
 class StripeEventAdminInline(admin.TabularInline):
     model = models.StripeEvent
-    fields = ("type", "received_at", "event_id", "status")
-    readonly_fields = ("type", "received_at", "event_id", "status")
+    fields = ("__str__", "received_at", "event_id", "status")
+    readonly_fields = ("__str__", "received_at", "event_id", "status")
     can_delete = False
     show_change_link = True
     ordering = ("-received_at",)

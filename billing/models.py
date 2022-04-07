@@ -323,12 +323,21 @@ class StripeEvent(models.Model):
         NEW_SUB = "new_sub", "New Subscription"
         RENEW_SUB = "renew_sub", "Renew Subscription"
         PAYMENT_FAIL = "payment_fail", "Payment Failure"
+        UPDATE_PAYMENT_METHOD = "update_payment_method", "Update Payment Method"
+        FIX_PAYMENT_METHOD = (
+            "fix_payment_method",
+            "Fix Payment Method",
+        )
         CANCEL_SUB = "cancel_sub", "Cancel Subscription"
         REACTIVATE_SUB = "reactivate_sub", "Reactivate Subscription"
         DELETE_SUB = "delete_sub", "Delete Subscription"
-        IGNORED = "ignored", "Ignored"
+        UNKNOWN = "unknown", "Unknown"
+        IGNORED = "ignored", "Ignored"  # TODO REMOVE after data migration
 
     type = models.CharField(max_length=254, blank=True)
+    primary = models.BooleanField(
+        help_text="Is this the primary event for the event type?", default=False
+    )
     payload_type = models.CharField(max_length=254)
     received_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(
@@ -357,7 +366,9 @@ class StripeEvent(models.Model):
     )
 
     def __str__(self):
-        if self.type:
+        if self.type and self.primary:
+            return StripeEvent.Type(self.type).label + " (Primary)"
+        elif self.type and not self.primary:
             return StripeEvent.Type(self.type).label
         else:
             return self.payload_type
