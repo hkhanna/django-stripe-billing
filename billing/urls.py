@@ -15,7 +15,7 @@ urlpatterns = [
         name="checkout_success",
     ),
     path(
-        "create-portal-session",
+        "create-portal-session/",
         views.CreatePortalView.as_view(),
         name="create_portal_session",
     ),
