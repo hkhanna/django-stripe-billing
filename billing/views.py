@@ -43,7 +43,9 @@ def stripe_webhook_view(request):
         headers=headers,
         status=models.StripeEvent.Status.NEW,
     )
-    logger.info(f"StripeEvent.id={event.id} StripeEvent.type={event.type} received")
+    logger.info(
+        f"StripeEvent.id={event.id} StripeEvent.payload_type={event.payload_type} received"
+    )
     if hasattr(tasks, "shared_task"):
         tasks.process_stripe_event.delay(event.id)
     else:

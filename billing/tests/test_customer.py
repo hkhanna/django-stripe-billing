@@ -5,7 +5,6 @@
 import pytest
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
 
 from .. import models, factories
 
@@ -74,7 +73,7 @@ def test_soft_delete_user_active_subscription(mock_stripe_subscription):
     user = factories.UserFactory(paying=True)
     user.save()
     assert mock_stripe_subscription.modify.called is False
-    assert models.Customer.PaymentState.OK == user.customer.payment_state
+    assert "ok" == user.customer.payment_state
 
     user.is_active = False
     user.save()
@@ -87,24 +86,3 @@ def test_delete_user_active_subscription(mock_stripe_subscription):
     user.delete()
     assert mock_stripe_subscription.delete.call_count == 1
     assert 0 == models.Customer.objects.count()
-
-
-def test_customer_payment_state_constraint():
-    """If the payment_state is NOT set to off, there MUST be a subscription id."""
-    factories.UserFactory(
-        customer__subscription_id=None,
-        customer__payment_state=models.Customer.PaymentState.OFF,
-    )
-    factories.UserFactory(
-        customer__subscription_id=factories.id("sub"),
-        customer__payment_state=models.Customer.PaymentState.OFF,
-    )
-    factories.UserFactory(
-        customer__subscription_id=factories.id("sub"),
-        customer__payment_state=models.Customer.PaymentState.ERROR,
-    )
-    with pytest.raises(IntegrityError):
-        factories.UserFactory(
-            customer__subscription_id=None,
-            customer__payment_state=models.Customer.PaymentState.OK,
-        )

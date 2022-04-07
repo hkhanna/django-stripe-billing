@@ -12,16 +12,27 @@ from .. import models, factories
 
 
 @pytest.fixture
-def customer(upcoming_period_end):
+def customer():
     """Customer that is coming up for renewal"""
     user = factories.UserFactory(
         paying=True,
         customer__customer_id="cus",
-        customer__subscription_id="sub",
-        customer__current_period_end=upcoming_period_end,
     )
     assert "paid.paying" == user.customer.state  # Gut check
     return user.customer
+
+
+@pytest.fixture
+def payload(customer):
+    """TK
+    id = kwargs.pop("id", factories.fake.pystr())
+    customer_id = kwargs.pop("customer_id", factories.fake.pystr())
+    current_period_end = data_object["current_period_end"]
+    price_id = data_object["items"]["data"][0]["price"]["id"]
+    cancel_at_period_end = data_object["cancel_at_period_end"]
+    created = data_object["created"]
+    status = data_object["status"]
+    """
 
 
 def test_create_event(client):
@@ -42,25 +53,26 @@ def test_bad_json(client):
     assert models.StripeEvent.objects.count() == 0
 
 
-def test_unrecognized_type(client, customer):
+def test_unrecognized_type(client):
     """Unrecognized event type"""
     url = reverse("billing:stripe_webhook")
     payload = {
         "id": "evt_test",
         "object": "event",
         "type": "bad.type",
-        "data": {
-            "object": {
-                "customer": customer.customer_id,
-                "subscription": customer.subscription_id,
-            }
-        },
+        "data": {"object": None},
     }
     response = client.post(url, payload, content_type="application/json")
     assert 201 == response.status_code
-    assert models.StripeEvent.Type.UNKNOWN == models.StripeEvent.objects.first().type
-    assert models.StripeEvent.Status.ERROR == models.StripeEvent.objects.first().status
-    assert "Unrecognized payload_type" in models.StripeEvent.objects.first().note
+    assert (
+        models.StripeEvent.Status.IGNORED == models.StripeEvent.objects.first().status
+    )
+
+
+# START: I may abandon a lot of these tests. I should maybe just have 1 parameterized test that tests the saving of the Event to a Subscription.
+# Test: the sync function syncs the right things based on the subscription state (maybe move this to a test_models?)
+# Test: If a customer has multiple subscriptions, the sync function is only called for the correct one.
+# Test: customer_id properly set
 
 
 def test_renewed(client, customer):

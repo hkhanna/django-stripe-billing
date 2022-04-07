@@ -112,18 +112,7 @@ def process_stripe_event(event_id, verify_signature=True):
             # take the latest created one. That's what this equality check does because
             # of how customer.subscription the property is defined.
             if subscription.customer == customer.subscription:
-                # Sync the plan and end date if the subscription is active.
-                if subscription.status == models.StripeSubscription.Status.ACTIVE:
-                    plan = models.Plan.objects.get(price_id=subscription.price_id)
-                    customer.plan = plan
-                    customer.current_period_end = subscription.current_period_end
-
-                # If the subscription is finally deleted, downgrade the customer to free_default and
-                # zero-out the current_period_end. (TODO test)
-                if subscription.status == models.StripeSubscription.Status.CANCELED:
-                    plan = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
-                    customer.plan = plan
-                    customer.current_period_end = None
+                subscription.sync_to_customer()
 
             # TODO retry when payment is fixed
             # TODO link event to StripeSubscription and display in admin

@@ -155,7 +155,7 @@ class Customer(models.Model):
         multiple subscriptions, which can happen erroneously or after a cancelation and renewal."""
         # We prefer an active subscription to a past_due subscription to every other subscription.
         # If there are still multiple subscriptions after that heuristic, we take the most recently created one.
-        subscriptions = self.subscription_set.order_by("-created").all()
+        subscriptions = self.stripesubscription_set.order_by("-created").all()
         for s in subscriptions:
             if s.status == "active":
                 return s
@@ -343,6 +343,25 @@ class StripeSubscription(models.Model):
         # UNPAID = "unpaid" -- not used
 
     status = models.CharField(max_length=254, choices=Status.choices)
+
+    def sync_to_customer(self):
+        """Synchronizes data on the StripeSubscription instance to the Customer instance,
+        if and as appropriate."""
+
+        # Sync the plan and end date if the subscription is active.
+        if self.status == StripeSubscription.Status.ACTIVE:
+            plan = Plan.objects.get(price_id=self.price_id)
+            self.customer.plan = plan
+            self.customer.current_period_end = self.current_period_end
+
+        # If the subscription is finally deleted, downgrade the customer to free_default and
+        # zero-out the current_period_end. (TODO test)
+        if self.status == StripeSubscription.Status.CANCELED:
+            plan = Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
+            self.customer.plan = plan
+            self.customer.current_period_end = None
+
+        self.customer.save()
 
 
 class StripeEvent(models.Model):
