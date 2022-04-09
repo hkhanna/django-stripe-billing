@@ -55,7 +55,7 @@ def process_stripe_event(event_id, verify_signature=True):
 
         # If the payload_type is customer.subscription.*,
         # create or update the appropriate StripeSubscription.
-        if event.payload_type.startswith("customer.subcription."):
+        if event.payload_type.startswith("customer.subscription."):
             # Extract the relevant attributes from the event payload
             id = data_object["id"]
             customer_id = data_object["customer"]
@@ -81,8 +81,7 @@ def process_stripe_event(event_id, verify_signature=True):
 
             # Link Customer/User to Event and StripeSubscription
             try:
-                user = link_user_to_event(event, customer_id)
-                customer = user.customer
+                customer = link_user_to_event(event, customer_id)
             except models.Customer.DoesNotExist:
                 # If a user is being hard deleted so the subscription is immediately canceled,
                 # this will happen, so we need to be ok with a user not existing in that case.
@@ -93,9 +92,8 @@ def process_stripe_event(event_id, verify_signature=True):
                     event.status = models.StripeEvent.Status.PROCESSED
                     event.save()
                     return
-            else:
-                # Otherwise, it's a genuine error since we can't locate the user.
-                raise
+                else:
+                    raise
 
             if not subscription.customer:
                 subscription.customer = customer
@@ -103,7 +101,9 @@ def process_stripe_event(event_id, verify_signature=True):
             else:
                 # Integrity check: if the StripeSubscription already has a customer, it should match
                 # the incoming subscription update.
-                assert subscription.customer == customer
+                assert (
+                    subscription.customer == customer
+                ), "Integrity error: StripeSubscription Customer does not match incoming subscription update customer_id"
 
             # Sync the Customer with the StripeSubscription.
 
@@ -111,7 +111,7 @@ def process_stripe_event(event_id, verify_signature=True):
             # prefer the active one, followed by past_due. If there are still multiple,
             # take the latest created one. That's what this equality check does because
             # of how customer.subscription the property is defined.
-            if subscription.customer == customer.subscription:
+            if subscription == customer.subscription:
                 subscription.sync_to_customer()
 
             # TODO retry when payment is fixed

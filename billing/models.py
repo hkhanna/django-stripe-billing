@@ -167,8 +167,6 @@ class Customer(models.Model):
         if len(subscriptions) > 0:
             return subscriptions[0]
 
-        # TODO: test no subscriptions returns no subscription or subscription_id
-
     # TODO: Refactor these properties into more sensible things (after tests pass)
     @property
     def subscription_id(self):
@@ -355,9 +353,9 @@ class StripeSubscription(models.Model):
             self.customer.current_period_end = self.current_period_end
 
         # If the subscription is finally deleted, downgrade the customer to free_default and
-        # zero-out the current_period_end. (TODO test)
+        # zero-out the current_period_end.
         if self.status == StripeSubscription.Status.CANCELED:
-            plan = Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
+            plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
             self.customer.plan = plan
             self.customer.current_period_end = None
 

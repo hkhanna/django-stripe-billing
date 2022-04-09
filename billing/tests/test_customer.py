@@ -86,3 +86,32 @@ def test_delete_user_active_subscription(mock_stripe_subscription):
     user.delete()
     assert mock_stripe_subscription.delete.call_count == 1
     assert 0 == models.Customer.objects.count()
+
+
+def test_subscription_multiple():
+    """If a Customer has multiple StripeSubscriptions, prefer the active one."""
+    user = factories.UserFactory(paying=True)
+    customer = user.customer
+    factories.StripeSubscriptionFactory(customer=customer, status="incomplete")
+    customer.refresh_from_db()
+    assert customer.stripesubscription_set.count() == 2
+    assert customer.subscription.status == "active"
+
+
+def test_no_subscriptions(customer):
+    """If a Customer has no StripeSubscription, return None for both Customer.subscription and Customer.subscription_id"""
+    customer.stripesubscription_set.all().delete()
+    customer.refresh_from_db()
+    assert customer.subscription is None
+    assert customer.subscription_id is None
+
+
+def test_cancel_subscription_immediately(mock_stripe_subscription):
+    """Immediately canceling a subscription calls out to Stripe to cancel immediately."""
+    user = factories.UserFactory(paying=True)
+    customer = user.customer
+    customer.cancel_subscription(immediate=True)
+    assert mock_stripe_subscription.delete.called is True
+    assert (
+        customer.state == "paid.paying"
+    )  # No change to state until we receive the webhook.

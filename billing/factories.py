@@ -66,8 +66,9 @@ class StripeSubscriptionFactory(factory.django.DjangoModelFactory):
     status = models.StripeSubscription.Status.ACTIVE
 
     @factory.post_generation
-    def sync_to_customer(obj, *args, **kwargs):
-        obj.sync_to_customer()
+    def dont_sync_to_customer(obj, create, extracted, **kwargs):
+        if not extracted:
+            obj.sync_to_customer()
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -95,6 +96,8 @@ class UserFactory(factory.django.DjangoModelFactory):
 
         if extracted:
             StripeSubscriptionFactory(customer=obj.customer)
+            obj.customer.customer_id = fake.pystr()
+            obj.customer.save()
 
     # If we pass in deep attributes to customer, this sets them properly.
     # Since it's defined after `paying`, it will overwrite that trait.

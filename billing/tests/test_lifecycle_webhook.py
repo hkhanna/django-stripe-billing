@@ -2,6 +2,7 @@
 some action in Checkout or Portal are found elsewhere."""
 
 from datetime import timedelta
+from unittest.mock import Mock
 from freezegun import freeze_time
 
 import pytest
@@ -23,16 +24,43 @@ def customer():
 
 
 @pytest.fixture
-def payload(customer):
-    """TK
-    id = kwargs.pop("id", factories.fake.pystr())
-    customer_id = kwargs.pop("customer_id", factories.fake.pystr())
-    current_period_end = data_object["current_period_end"]
-    price_id = data_object["items"]["data"][0]["price"]["id"]
-    cancel_at_period_end = data_object["cancel_at_period_end"]
-    created = data_object["created"]
-    status = data_object["status"]
-    """
+def subscription_event(customer, paid_plan):
+    """Return a function that generates a Stripe Event payload with defaults of an active paid subscription."""
+
+    def inner(**kwargs):
+        type = kwargs.pop("type", "customer.subscription.updated")
+        id = kwargs.pop("id", customer.subscription.id)
+        customer_id = kwargs.pop("customer_id", customer.customer_id)
+        current_period_end = kwargs.pop(
+            "current_period_end", customer.current_period_end.timestamp()
+        )
+        price_id = kwargs.pop("price_id", paid_plan.price_id)
+        cancel_at_period_end = kwargs.pop("cancel_at_period_end", False)
+        created = kwargs.pop("created", timezone.now().timestamp())
+        status = kwargs.pop("status", "active")
+
+        payload = {
+            "id": "evt_test",
+            "object": "event",
+            "type": type,
+            "data": {
+                "object": {
+                    "id": id,
+                    "customer": customer_id,
+                    "current_period_end": current_period_end,
+                    "items": {"data": [{"price": {"id": price_id}}]},
+                    "cancel_at_period_end": cancel_at_period_end,
+                    "created": created,
+                    "status": status,
+                }
+            },
+        }
+        assert len(kwargs.keys()) == 0, "Unrecognized keys passed to payload fixture."
+        return (
+            locals()
+        )  # For assertion convenience, we pass back all the variables at the top level as well.
+
+    return inner
 
 
 def test_create_event(client):
@@ -69,10 +97,141 @@ def test_unrecognized_type(client):
     )
 
 
-# START: I may abandon a lot of these tests. I should maybe just have 1 parameterized test that tests the saving of the Event to a Subscription.
-# Test: the sync function syncs the right things based on the subscription state (maybe move this to a test_models?)
-# Test: If a customer has multiple subscriptions, the sync function is only called for the correct one.
-# Test: customer_id properly set
+def test_subscription_event_new_stripe_subscription(
+    customer, client, subscription_event
+):
+    """A Stripe Subscription event payload should correctly create a StripeSubscription."""
+    url = reverse("billing:stripe_webhook")
+    event_json = subscription_event()
+    customer.stripesubscription_set.all().delete()
+    assert 0 == models.StripeSubscription.objects.count()
+
+    payload = event_json["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert 1 == models.StripeEvent.objects.count()
+    event = models.StripeEvent.objects.first()
+    assert models.StripeEvent.Status.PROCESSED == event.status
+
+    assert 1 == models.StripeSubscription.objects.count()
+    subscription = models.StripeSubscription.objects.first()
+
+    assert subscription.id == event_json["id"]
+    assert subscription.customer.customer_id == event_json["customer_id"]
+    assert (
+        subscription.current_period_end.timestamp() == event_json["current_period_end"]
+    )
+    assert subscription.price_id == event_json["price_id"]
+    assert subscription.cancel_at_period_end == event_json["cancel_at_period_end"]
+    assert subscription.created.timestamp() == event_json["created"]
+    assert subscription.status == event_json["status"]
+
+
+def test_subscription_event_update_stripe_subscription(client, subscription_event):
+    """A Stripe Subscription event payload should correctly update a StripeSubscription."""
+    url = reverse("billing:stripe_webhook")
+    event_attributes = {
+        "current_period_end": (timezone.now() + timedelta(days=45)).timestamp(),
+        # "price_id": "new_price" -- not available until we can upgrade plans
+        "cancel_at_period_end": True,
+        "created": timezone.now().timestamp(),
+        "status": "past_due",
+    }
+    event_json = subscription_event(**event_attributes)
+    # Ensure event_json is correct
+    for k, v in event_attributes.items():
+        assert event_json[k] == v
+
+    payload = event_json["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert 1 == models.StripeEvent.objects.count()
+    event = models.StripeEvent.objects.first()
+    assert models.StripeEvent.Status.PROCESSED == event.status
+
+    assert 1 == models.StripeSubscription.objects.count()
+    subscription = models.StripeSubscription.objects.first()
+
+    assert subscription.id == event_json["id"]
+    assert subscription.customer.customer_id == event_json["customer_id"]
+    assert (
+        subscription.current_period_end.timestamp() == event_json["current_period_end"]
+    )
+    assert subscription.price_id == event_json["price_id"]
+    assert subscription.cancel_at_period_end == event_json["cancel_at_period_end"]
+    assert subscription.created.timestamp() == event_json["created"]
+    assert subscription.status == event_json["status"]
+
+
+def test_link_event_to_user(client, customer, subscription_event):
+    """A Stripe Event should be connected to a User."""
+    url = reverse("billing:stripe_webhook")
+    payload = subscription_event()["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.user == customer.user
+
+
+def test_user_not_found(client, mock_stripe_customer, subscription_event):
+    """If a user can't be found, error."""
+    url = reverse("billing:stripe_webhook")
+    mock_stripe_customer.retrieve.return_value.email = "notfound@example.com"
+    payload = subscription_event(id="sub_new", customer_id="cus_new")["payload"]
+
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.status == models.StripeEvent.Status.ERROR
+    assert event.user == None
+    assert "Customer.DoesNotExist" in event.note
+
+
+def test_persist_customer_id(user, client, mock_stripe_customer, subscription_event):
+    """A Customer without a Stripe customer_id gets it set on the first subscription event."""
+    mock_stripe_customer.retrieve.return_value.email = user.email
+    url = reverse("billing:stripe_webhook")
+    event_json = subscription_event(id="sub_new", customer_id="cus_new")
+    assert user.customer.customer_id is None
+
+    payload = event_json["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    user.customer.refresh_from_db()
+    assert user.customer.customer_id == "cus_new"
+
+
+def test_subscription_customer_mismatch(
+    user, client, subscription_event, mock_stripe_customer
+):
+    """If a subscription already belongs to a different customer in the database than
+    the customer_id reported on the event, something is wrong.
+    This could happen if someone changes who the StripeSubscription instance is connected to in the admin."""
+    mock_stripe_customer.retrieve.return_value.email = user.email
+    url = reverse("billing:stripe_webhook")
+    payload = subscription_event(customer_id="cus_different")["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    event = models.StripeEvent.objects.first()
+    assert event.status == models.StripeEvent.Status.ERROR
+    assert "Integrity error" in event.note
+
+
+def test_multiple_subscriptions_sync(client, subscription_event, monkeypatch):
+    """If a customer has multiple subscriptions, the sync function is only called for the correct one."""
+    mock = Mock()
+    monkeypatch.setattr(models.StripeSubscription, "sync_to_customer", mock)
+    url = reverse("billing:stripe_webhook")
+
+    payload = subscription_event(id="sub_different", status="past_due")["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert mock.call_count == 0
+
+    payload = subscription_event(status="past_due")["payload"]
+    response = client.post(url, payload, content_type="application/json")
+    assert 201 == response.status_code
+    assert mock.call_count == 1
 
 
 def test_renewed(client, customer):
@@ -207,83 +366,6 @@ def test_past_due_miss_final_cancel(client, customer):
     with freeze_time(sixty_days_hence):
         customer.refresh_from_db()
         assert "free_default.past_due.requires_payment_method" == customer.state
-
-
-def test_link_event_to_user(client, customer):
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.deleted",
-        "data": {
-            "object": {
-                "id": "sub",
-                "customer": "cus",
-                "status": "canceled",
-                "cancel_at_period_end": False,
-            }
-        },
-    }
-    response = client.post(url, payload, content_type="application/json")
-    assert response.status_code == 201
-    event = models.StripeEvent.objects.first()
-    assert event.user == customer.user
-
-
-def test_non_primary_event_subscription(client, customer):
-    """Non-primary events should get the correct type and user attached but be ignored."""
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.updated",
-        "data": {
-            "object": {
-                "id": "sub",
-                "customer": "cus",
-                "cancel_at_period_end": False,
-                "status": "active",
-            },
-            "previous_attributes": {"status": "incomplete"},
-        },
-    }
-    response = client.post(url, payload, content_type="application/json")
-    assert response.status_code == 201
-    event = models.StripeEvent.objects.first()
-    assert event.type == models.StripeEvent.Type.NEW_SUB
-    assert event.primary is False
-    assert event.status == models.StripeEvent.Status.IGNORED
-    assert event.user == customer.user
-
-
-def test_user_not_found(client, mock_stripe_customer):
-    """If a user can't be found, error."""
-    url = reverse("billing:stripe_webhook")
-    mock_stripe_customer.retrieve.return_value.email = "notfound@example.com"
-
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.updated",
-        "data": {
-            "object": {
-                "id": "sub",
-                "customer": "cus",
-                "cancel_at_period_end": False,
-                "status": "active",
-            },
-            "previous_attributes": {"status": "incomplete"},
-        },
-    }
-
-    response = client.post(url, payload, content_type="application/json")
-    assert response.status_code == 201
-    event = models.StripeEvent.objects.first()
-    assert event.type == models.StripeEvent.Type.NEW_SUB
-    assert event.primary is False
-    assert event.status == models.StripeEvent.Status.ERROR
-    assert event.user == None
-    assert "Customer.DoesNotExist" in event.note
 
 
 def test_payment_update_active(client, customer):

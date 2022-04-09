@@ -65,7 +65,7 @@ def test_create_checkout_session_already_paid(
     auth_client, paid_plan, user, mock_stripe_checkout
 ):
     """A User with an existing subscription may not access the create_checkout_session endpoint."""
-    factories.set_customer_paying(user.customer)
+    factories.StripeSubscriptionFactory(customer=user.customer)
     url = reverse(
         "billing:create_checkout_session",
         kwargs={"slug": paid_plan.slug, "pk": paid_plan.id},
@@ -147,45 +147,3 @@ def test_create_subscription_changed_email(
     assert settings.CHECKOUT_SUCCESS_URL == response.url
     assert mock_stripe_customer.modify.call_count == 1
     assert mock_stripe_customer.modify.call_args.kwargs["email"] == user.email
-
-
-def test_webhook_create_subscription(client, customer, paid_plan, mock_stripe_customer):
-    """invoice.paid should set the customer_id, plan, current_period_end, payment_state"""
-    mock_period_end = (timezone.now() + timedelta(days=30)).timestamp()
-    mock_stripe_customer.retrieve.return_value.email = customer.user.email
-
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "invoice.paid",
-        "data": {
-            "object": {
-                "billing_reason": "subscription_create",
-                "customer": "cus",
-                "subscription": "sub",
-                "lines": {
-                    "data": [
-                        {
-                            "plan": {"id": paid_plan.price_id},
-                            "period": {"end": mock_period_end},
-                        }
-                    ]
-                },
-            }
-        },
-    }
-
-    response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-
-    customer.refresh_from_db()
-    assert paid_plan == customer.plan
-    assert customer.customer_id == "cus"
-    assert customer.payment_state == models.Customer.PaymentState.OK
-    assert mock_period_end == customer.current_period_end.timestamp()
-    assert "sub" == customer.subscription_id
-    assert "paid.paying" == customer.state
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
