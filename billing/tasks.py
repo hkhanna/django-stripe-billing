@@ -114,10 +114,7 @@ def process_stripe_event(event_id, verify_signature=True):
             if subscription == customer.subscription:
                 subscription.sync_to_customer()
 
-            # TODO retry when payment is fixed
-            # TODO link event to StripeSubscription and display in admin
-            # TODO move replay button to admin action
-            # TODO test every StripeSubscription state
+                # If payment method has changed and the subscription is paid_due, retry payment. (TODO)
 
             event.status = models.StripeEvent.Status.PROCESSED
         else:

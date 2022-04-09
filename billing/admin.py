@@ -1,10 +1,13 @@
 from datetime import timedelta
 import json
 from django.utils import timezone
-from django.contrib import admin
-from django.urls import path, reverse
-from django.shortcuts import get_object_or_404, redirect
 from django.utils.html import format_html
+from django.contrib import admin
+from django.urls import reverse
+from django.shortcuts import redirect
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 from . import models, tasks
 
@@ -15,7 +18,14 @@ class CustomerAdminInline(admin.StackedInline):
     can_delete = (
         False  # You can't delete a Customer in the admin without deleting the User.
     )
-    readonly_fields = ("state",)
+    readonly_fields = ("state", "subscription_link")
+
+    def subscription_link(self, obj):
+        path = reverse(
+            f"admin:billing_stripesubscription_change",
+            args=(obj.subscription.id,),
+        )
+        return format_html("<a href={}>{}</a>", path, obj.subscription)
 
 
 @admin.register(models.Limit)
@@ -39,51 +49,49 @@ class StripeEventAdmin(admin.ModelAdmin):
     list_display = [
         "__str__",
         "payload_type",
-        # TODO Add status if its a subscription
-        "user",
-        "status",
+        "subscription_status",
+        "user_link",
         "received_at",
-        "event_actions",
+        "status",
     ]
-    list_filter = ["type", "primary", "status"]
+    list_filter = ["payload_type", "status"]
     search_fields = ["user__email", "payload_type", "type"]
+    ordering = ["-received_at"]
 
-    @admin.display(description="Actions")
-    def event_actions(self, obj):
-        return format_html(
-            "<a class='button' href='{}'>Replay</a>",
-            reverse("admin:replay_event", args=[obj.pk]),
+    @admin.display(description="User")
+    def user_link(self, obj):
+        path = reverse(
+            f"admin:{User._meta.app_label}_{User._meta.model_name}_change",
+            args=(obj.user.id,),
         )
+        return format_html("<a href={}>{}</a>", path, obj.user)
 
-    def replay_event(self, request, pk):
-        obj = get_object_or_404(models.StripeEvent, pk=pk)
-        payload = json.loads(obj.body)
-        event = models.StripeEvent.objects.create(
-            event_id=obj.event_id,
-            payload_type=payload["type"],
-            headers=obj.headers,
-            body=obj.body,
-            status=models.StripeEvent.Status.NEW,
-            note=f"Replay of event pk {obj.id}",
-        )
-        if hasattr(tasks, "shared_task"):
-            tasks.process_stripe_event.apply(event.id, verify_signature=False)
-        else:
-            tasks.process_stripe_event(event.id, verify_signature=False)
+    def subscription_status(self, obj):
+        if obj.payload_type.startswith("customer.subscription."):
+            payload = json.loads(obj.body)
+            return payload["data"]["object"]["status"]
 
-        self.message_user(request, "Event replayed successfully.")
-        return redirect("admin:billing_stripeevent_changelist")
+    @admin.action(description="Replay event")
+    def replay_event(self, request, queryset):
 
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                "<pk>/replay",
-                self.admin_site.admin_view(self.replay_event),
-                name="replay_event",
+        for obj in queryset.all():
+            payload = json.loads(obj.body)
+            event = models.StripeEvent.objects.create(
+                event_id=obj.event_id,
+                payload_type=payload["type"],
+                headers=obj.headers,
+                body=obj.body,
+                status=models.StripeEvent.Status.NEW,
+                note=f"Replay of event pk {obj.id}",
             )
-        ]
-        return custom_urls + urls
+            if hasattr(tasks, "shared_task"):
+                tasks.process_stripe_event.apply(event.id, verify_signature=False)
+            else:
+                tasks.process_stripe_event(event.id, verify_signature=False)
+
+            self.message_user(request, f"Event  {obj.id} replayed successfully.")
+
+        return redirect("admin:billing_stripeevent_changelist")
 
 
 class StripeEventAdminInline(admin.TabularInline):
@@ -101,3 +109,9 @@ class StripeEventAdminInline(admin.TabularInline):
 
     def has_add_permission(self, request, obj=None):
         return False
+
+
+@admin.register(models.StripeSubscription)
+class StripeSubscriptionAdmin(admin.ModelAdmin):
+    can_delete = False
+    ordering = ("-created",)

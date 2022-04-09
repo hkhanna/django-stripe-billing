@@ -361,6 +361,9 @@ class StripeSubscription(models.Model):
 
         self.customer.save()
 
+    def __str__(self):
+        return self.id
+
 
 class StripeEvent(models.Model):
     """Stripe Events from webhooks"""
