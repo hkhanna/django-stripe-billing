@@ -114,7 +114,12 @@ def process_stripe_event(event_id, verify_signature=True):
             if subscription == customer.subscription:
                 subscription.sync_to_customer()
 
-                # If payment method has changed and the subscription is paid_due, retry payment. (TODO)
+                # If payment method has changed and the subscription is paid_due, retry payment.
+                pm_change = data_object.get("previous_attributes", {}).get(
+                    "default_payment_method"
+                )
+                if subscription.status in ("incomplete", "past_due") and pm_change:
+                    services.stripe_retry_latest_invoice(customer.customer_id)
 
             event.status = models.StripeEvent.Status.PROCESSED
         else:

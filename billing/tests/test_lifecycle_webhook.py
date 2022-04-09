@@ -241,7 +241,9 @@ def test_payment_update_active(
     active."""
     url = reverse("billing:stripe_webhook")
     payload = subscription_event()["payload"]
-    payload["data"]["previous_attributes"] = {"default_payment_method": "pm_new"}
+    payload["data"]["object"]["previous_attributes"] = {
+        "default_payment_method": "pm_new"
+    }
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()
@@ -262,7 +264,9 @@ def test_payment_update_and_retry(
     url = reverse("billing:stripe_webhook")
 
     payload = subscription_event(status=status)["payload"]
-    payload["data"]["previous_attributes"] = {"default_payment_method": "pm_new"}
+    payload["data"]["object"]["previous_attributes"] = {
+        "default_payment_method": "pm_new"
+    }
 
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
