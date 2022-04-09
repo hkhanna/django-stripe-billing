@@ -1,10 +1,7 @@
 import pytest
 from django.urls import reverse
-from django.utils import timezone
 
 from .. import factories, models
-
-# TODO remove upcoming_period_end fixture
 
 
 @pytest.fixture

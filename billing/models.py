@@ -170,12 +170,17 @@ class Customer(models.Model):
     # TODO: Refactor these properties into more sensible things (after tests pass)
     @property
     def subscription_id(self):
-        if self.subscription:
+        if self.subscription and self.subscription.status not in (
+            "canceled",
+            "incomplete_expired",
+        ):
             return self.subscription.id
 
     @property
     def payment_state(self):
         if not self.subscription:
+            return "off"
+        if self.subscription.cancel_at_period_end:
             return "off"
         if self.subscription.status == StripeSubscription.Status.ACTIVE:
             return "ok"
@@ -325,7 +330,6 @@ class StripeSubscription(models.Model):
 
     id = models.CharField(max_length=254, primary_key=True)
     customer = models.ForeignKey(Customer, null=True, on_delete=models.SET_NULL)
-    # TODO: think about hard delete user
     current_period_end = models.DateTimeField()
     price_id = models.CharField(max_length=254)
     cancel_at_period_end = models.BooleanField(default=False)

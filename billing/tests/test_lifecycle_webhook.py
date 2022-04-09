@@ -234,195 +234,39 @@ def test_multiple_subscriptions_sync(client, subscription_event, monkeypatch):
     assert mock.call_count == 1
 
 
-def test_renewed(client, customer):
-    """A renewal was successfully processed for the next billing cycle"""
-    # https://stripe.com/docs/billing/subscriptions/webhooks#tracking
-    # Listen to an invoice webhook
-    url = reverse("billing:stripe_webhook")
-    mock_period_end = timezone.now() + timedelta(days=30)
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "invoice.paid",
-        "data": {
-            "object": {
-                # See https://stackoverflow.com/questions/22601521/stripe-webhook-events-renewal-of-subscription
-                # for why we need the billing_reason.
-                "billing_reason": "subscription_cycle",
-                "customer": "cus",
-                "subscription": "sub",
-                "lines": {
-                    "data": [
-                        {
-                            "plan": {"id": "price"},
-                            "period": {"end": mock_period_end.timestamp()},
-                        }
-                    ]
-                },
-            }
-        },
-    }
-    response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    customer.refresh_from_db()
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
-    assert customer.current_period_end == mock_period_end
-    assert "paid.paying" == customer.state
-
-
-def test_payment_failure(client, customer, upcoming_period_end):
-    """A renewal payment failed"""
-    # https://stripe.com/docs/billing/subscriptions/webhooks#payment-failures
-    # https://stripe.com/docs/billing/subscriptions/overview#build-your-own-handling-for-recurring-charge-failures
-    # Listen to customer.subscription.updated. status=past_due
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "invoice.payment_failed",
-        "data": {
-            "object": {
-                "customer": "cus",
-                "subscription": "sub",
-                "billing_reason": "subscription_cycle",
-                "lines": {
-                    "data": [
-                        {
-                            "plan": {"id": "price"},
-                            "period": {"end": upcoming_period_end},
-                        }
-                    ]
-                },
-            }
-        },
-    }
-
-    response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
-    assert customer.current_period_end == upcoming_period_end
-    customer.refresh_from_db()
-    assert (
-        customer.payment_state == models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
-    )
-    assert "paid.past_due.requires_payment_method" == customer.state
-
-
-def test_payment_failure_permanent(client, customer, upcoming_period_end):
-    """Renewal payment has permanently failed"""
-    # Listen to customer.subscription.updated. status=canceled
-    url = reverse("billing:stripe_webhook")
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.deleted",
-        "data": {
-            "object": {
-                "id": "sub",
-                "customer": "cus",
-                "status": "canceled",
-                "cancel_at_period_end": False,
-            }
-        },
-    }
-    response = client.post(url, payload, content_type="application/json")
-    assert 201 == response.status_code
-    assert (
-        models.StripeEvent.Status.PROCESSED == models.StripeEvent.objects.first().status
-    )
-    assert customer.current_period_end == upcoming_period_end
-    customer.refresh_from_db()
-    assert customer.payment_state == models.Customer.PaymentState.OFF
-    assert "free_default.new" == customer.state
-
-
-def test_cancel_miss_final_cancel(client, customer):
-    """User cancels and then we miss the final Stripe subscription cancelation
-    webhook or the reactivation webhook."""
-    # N.B. Missing the initial cancelation webhook is nbd since the Portal
-    # will remain accessible and eventually final cancelation will come through.
-    customer.payment_state = models.Customer.PaymentState.OFF
-    customer.save()
-    assert "paid.will_cancel" == customer.state
-
-    sixty_days_hence = timezone.now() + timedelta(days=60)
-    with freeze_time(sixty_days_hence):
-        customer.refresh_from_db()
-        assert "free_default.canceled.missed_webhook" == customer.state
-
-
-def test_past_due_miss_final_cancel(client, customer):
-    """User is past_due and then we miss the invoice.paid webhook or
-    final Stripe cancelation webhook"""
-    # This is not ideal. A missed webhook here will leave the user totally unable to subscribe.
-    customer.payment_state = models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
-    customer.save()
-    assert "paid.past_due.requires_payment_method" == customer.state
-    sixty_days_hence = timezone.now() + timedelta(days=60)
-    with freeze_time(sixty_days_hence):
-        customer.refresh_from_db()
-        assert "free_default.past_due.requires_payment_method" == customer.state
-
-
-def test_payment_update_active(client, customer):
+def test_payment_update_active(
+    client, customer, subscription_event, mock_stripe_invoice
+):
     """An update to a Subscription's payment method does not do anything if the Subscription is
     active."""
     url = reverse("billing:stripe_webhook")
-
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.updated",
-        "data": {
-            "object": {
-                "id": "sub",
-                "customer": "cus",
-                "cancel_at_period_end": False,
-                "status": "active",
-            },
-            "previous_attributes": {"default_payment_method": "pm_something"},
-        },
-    }
-
+    payload = subscription_event()["payload"]
+    payload["data"]["previous_attributes"] = {"default_payment_method": "pm_new"}
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()
-    assert event.type == models.StripeEvent.Type.UPDATE_PAYMENT_METHOD
     assert event.status == models.StripeEvent.Status.PROCESSED
     assert event.user.customer == customer
+    assert mock_stripe_invoice.list.call_count == 0
+    assert mock_stripe_invoice.pay.call_count == 0
 
 
 @pytest.mark.parametrize("status", ["incomplete", "past_due"])
-def test_payment_update_and_retry(client, customer, status, mock_stripe_invoice):
+def test_payment_update_and_retry(
+    client, subscription_event, customer, status, mock_stripe_invoice
+):
     """An update to a Subscription's payment method when not active automatically retries the last open invoice."""
     mock_stripe_invoice.list.return_value = {
         "data": [{"status": "open", "id": "inv_123"}]
     }
     url = reverse("billing:stripe_webhook")
 
-    payload = {
-        "id": "evt_test",
-        "object": "event",
-        "type": "customer.subscription.updated",
-        "data": {
-            "object": {
-                "id": "sub",
-                "customer": "cus",
-                "cancel_at_period_end": False,
-                "status": status,
-            },
-            "previous_attributes": {"default_payment_method": "pm_something"},
-        },
-    }
+    payload = subscription_event(status=status)["payload"]
+    payload["data"]["previous_attributes"] = {"default_payment_method": "pm_new"}
 
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()
-    assert event.type == models.StripeEvent.Type.FIX_PAYMENT_METHOD
     assert event.status == models.StripeEvent.Status.PROCESSED
     assert event.user.customer == customer
     assert mock_stripe_invoice.list.call_count == 1
