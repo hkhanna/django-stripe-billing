@@ -88,7 +88,9 @@ class StripeEventAdmin(admin.ModelAdmin):
                 note=f"Replay of event pk {obj.id}",
             )
             if hasattr(tasks, "shared_task"):
-                tasks.process_stripe_event.apply(event.id, verify_signature=False)
+                tasks.process_stripe_event.apply(
+                    kwargs={"event_id": event.id, "verify_signature": False}
+                )
             else:
                 tasks.process_stripe_event(event.id, verify_signature=False)
 
