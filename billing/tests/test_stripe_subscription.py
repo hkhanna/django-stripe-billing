@@ -62,6 +62,7 @@ def test_sync_canceled(customer, paid_plan, status):
     free_default = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
     if status in (
         models.StripeSubscription.Status.CANCELED,
+        models.StripeSubscription.Status.INCOMPLETE,
         models.StripeSubscription.Status.INCOMPLETE_EXPIRED,
     ):
         assert customer.plan == free_default

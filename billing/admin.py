@@ -118,5 +118,5 @@ class StripeEventAdminInline(admin.TabularInline):
 
 @admin.register(models.StripeSubscription)
 class StripeSubscriptionAdmin(admin.ModelAdmin):
-    can_delete = False
     ordering = ("-created",)
+    list_display = ["id", "customer", "status"]

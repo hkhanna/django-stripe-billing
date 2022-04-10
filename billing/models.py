@@ -253,7 +253,9 @@ class Customer(models.Model):
             return "free_private.expired"
 
         if (
-            self.subscription is not None
+            self.plan.type == Plan.Type.FREE_DEFAULT
+            and self.current_period_end is None
+            and self.subscription is not None
             and self.subscription.status == StripeSubscription.Status.INCOMPLETE
         ):
             # There's a plan but it never got off the ground because the credit card
@@ -369,6 +371,13 @@ class StripeSubscription(models.Model):
             StripeSubscription.Status.CANCELED,
             StripeSubscription.Status.INCOMPLETE_EXPIRED,
         ):
+            plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
+            self.customer.plan = plan
+            self.customer.current_period_end = None
+            self.customer.save()
+
+        # Do the same thing if its incomplete, but just for consistency's sake.
+        if self.status == StripeSubscription.Status.INCOMPLETE:
             plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
             self.customer.plan = plan
             self.customer.current_period_end = None
