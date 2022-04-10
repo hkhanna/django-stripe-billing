@@ -42,7 +42,6 @@ def process_stripe_event(event_id, verify_signature=True):
     """Handler for Stripe Events"""
     logger.info(f"StripeEvent.id={event_id} process_stripe_event task started")
     event = models.StripeEvent.objects.get(pk=event_id)
-    customer = None
     try:
         event.status = models.StripeEvent.Status.PENDING
         event.save()
@@ -125,6 +124,8 @@ def process_stripe_event(event_id, verify_signature=True):
                     f"StripeEvent.id={event.id} syncing the subcription to customer"
                 )
                 subscription.sync_to_customer()
+                subscription.refresh_from_db()
+                customer.refresh_from_db()
 
                 # If payment method has changed and the subscription is paid_due, retry payment.
                 pm_change = (
@@ -151,8 +152,6 @@ def process_stripe_event(event_id, verify_signature=True):
         event.note = traceback.format_exc()
     finally:
         logger.debug(f"StripeEvent.id={event.id} Saving StripeEvent")
-        if customer:
-            customer.save()
         event.save()
 
 

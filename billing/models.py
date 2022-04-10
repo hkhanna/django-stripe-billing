@@ -360,7 +360,7 @@ class StripeSubscription(models.Model):
             self.customer.current_period_end = self.current_period_end
             self.customer.save()
             logger.debug(
-                f"StripeSubscription.id={self.id} updated customer {self.customer} plan to {self.customer.plan} and current_period_end to {self.customer.current_period_end}"
+                f"StripeSubscription.id={self.id} updated customer {self.customer} which is user {self.customer.user.pk} plan to {self.customer.plan} and current_period_end to {self.customer.current_period_end}"
             )
 
         # If the subscription is finally deleted, downgrade the customer to free_default and
