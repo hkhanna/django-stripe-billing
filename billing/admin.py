@@ -58,7 +58,7 @@ class StripeEventAdmin(admin.ModelAdmin):
     list_filter = ["payload_type", "status"]
     search_fields = ["user__email", "payload_type", "type"]
     ordering = ["-received_at"]
-    actions = ["reply_event"]
+    actions = ["replay_event"]
 
     @admin.display(description="User")
     def user_link(self, obj):
