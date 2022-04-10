@@ -21,11 +21,12 @@ class CustomerAdminInline(admin.StackedInline):
     readonly_fields = ("state", "subscription_link")
 
     def subscription_link(self, obj):
-        path = reverse(
-            f"admin:billing_stripesubscription_change",
-            args=(obj.subscription.id,),
-        )
-        return format_html("<a href={}>{}</a>", path, obj.subscription)
+        if obj.subscription:
+            path = reverse(
+                f"admin:billing_stripesubscription_change",
+                args=(obj.subscription.id,),
+            )
+            return format_html("<a href={}>{}</a>", path, obj.subscription)
 
 
 @admin.register(models.Limit)
@@ -60,11 +61,12 @@ class StripeEventAdmin(admin.ModelAdmin):
 
     @admin.display(description="User")
     def user_link(self, obj):
-        path = reverse(
-            f"admin:{User._meta.app_label}_{User._meta.model_name}_change",
-            args=(obj.user.id,),
-        )
-        return format_html("<a href={}>{}</a>", path, obj.user)
+        if obj.user:
+            path = reverse(
+                f"admin:{User._meta.app_label}_{User._meta.model_name}_change",
+                args=(obj.user.id,),
+            )
+            return format_html("<a href={}>{}</a>", path, obj.user)
 
     def subscription_status(self, obj):
         if obj.payload_type.startswith("customer.subscription."):

@@ -2,7 +2,8 @@ Unreleased
 ----------------------
 - Automatically retry failed invoices when a customer updates their subscription payment method.
 - Fix a bug where if a customer's payment failed and you renewed it, the state was messed up.
-- You should no longer listen to any webhooks other than `customer.subscription.*`. All other webhooks will be ignored.
+- Major refactor that considers the subscription information coming from Stripe authoritative.
+- As such, you should no longer listen to any webhooks other than `customer.subscription.*`. All other webhooks will be ignored.
 
 0.4.1
 ----------------------
