@@ -254,6 +254,16 @@ class Customer(models.Model):
 
         if (
             self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
+            and self.subscription is not None
+            and self.subscription.status == StripeSubscription.Status.INCOMPLETE
+        ):
+            # There's a plan but it never got off the ground because the credit card
+            # attached but could not be used. The application will treat the plan
+            # as free_default because it was never actually started.
+            return "free_default.incomplete.requires_payment_method"
+
+        if (
+            self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
             and self.subscription is not None

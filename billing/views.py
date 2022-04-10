@@ -170,6 +170,7 @@ class CreatePortalView(LoginRequiredMixin, View):
         customer = request.user.customer
         if customer.state not in (
             "free_default.past_due.requires_payment_method",
+            "free_default.incomplete.requires_payment_method",
             "paid.past_due.requires_payment_method",
             "paid.paying",
             "paid.will_cancel",

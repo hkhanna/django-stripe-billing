@@ -44,7 +44,8 @@ def test_sync_active(customer, paid_plan, status):
     "status", ["incomplete", "incomplete_expired", "active", "past_due", "canceled"]
 )
 def test_sync_canceled(customer, paid_plan, status):
-    """Only a canceled StripeSubscription downgrades the Customer to free_default and zeroes out current_period_end"""
+    """Only a canceled or incomplete_expired StripeSubscription downgrades
+    the Customer to free_default and zeroes out current_period_end"""
     subscription = factories.StripeSubscriptionFactory(
         customer=customer,
         status="active",
@@ -59,7 +60,10 @@ def test_sync_canceled(customer, paid_plan, status):
 
     customer.refresh_from_db()
     free_default = models.Plan.objects.get(type=models.Plan.Type.FREE_DEFAULT)
-    if status == "canceled":
+    if status in (
+        models.StripeSubscription.Status.CANCELED,
+        models.StripeSubscription.Status.INCOMPLETE_EXPIRED,
+    ):
         assert customer.plan == free_default
         assert customer.current_period_end == None
     else:

@@ -10,6 +10,7 @@ from ..models import Customer
         "free_default.new",
         "free_private.expired",
         "free_default.past_due.requires_payment_method",
+        "free_default.incomplete.requires_payment_method",
         "paid.past_due.requires_payment_method",
         "paid.paying",
         "paid.will_cancel",
