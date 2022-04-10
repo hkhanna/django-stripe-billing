@@ -121,6 +121,9 @@ def process_stripe_event(event_id, verify_signature=True):
                 f"StripeEvent.id={event_id} comparing subscription.id={subscription.id} and customer.subscription.id={customer.subscription.id}"
             )
             if subscription.id == customer.subscription.id:
+                logger.info(
+                    f"StripeEvent.id={event.id} syncing the subcription to customer"
+                )
                 subscription.sync_to_customer()
 
                 # If payment method has changed and the subscription is paid_due, retry payment.
