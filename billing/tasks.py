@@ -9,8 +9,6 @@ from django.utils import timezone
 
 from . import models, settings, services
 
-EVENT_TYPE = models.StripeEvent.Type
-
 try:
     from celery.utils.log import get_task_logger
 
@@ -19,214 +17,31 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
-def _preprocess_payload_type(event):
-    payload = json.loads(event.body)
-    data_object = payload["data"]["object"]
-    event.type = EVENT_TYPE.UNKNOWN
-    event.save()
-
-    # invoice.paid -> new or renewed subscription
-    if payload["type"] == "invoice.paid":
-        # billing_reason=subscription_cycle means its a renewal, not a new subscription.
-        # See https://stackoverflow.com/questions/22601521/stripe-webhook-events-renewal-of-subscription
-        if data_object["billing_reason"] == "subscription_create":
-            event.type = EVENT_TYPE.NEW_SUB
-            event.primary = True
-        elif data_object["billing_reason"] == "subscription_cycle":
-            event.type = EVENT_TYPE.RENEW_SUB
-            event.primary = True
-        else:
-            # Other billing_reasons should not happen.
-            event.note = f"Unrecognized invoice.paid billing_reason: {data_object['billing_reason']}."
-        # TODO: Upgrading and downgrading subscriptions may generate a "subscription_update" billing reason.
-
-    # invoice.payment_failed -> payment isn't working (new or renewal)
-    elif payload["type"] == "invoice.payment_failed":
-        # You need the billing reason here too. Otherwise it tracks a
-        # payment failure when the subscription is incomplete on setup.
-        if data_object["billing_reason"] == "subscription_create":
-            event.type = EVENT_TYPE.NEW_SUB
-            event.primary = False
-        if data_object["billing_reason"] == "subscription_cycle":
-            event.type = EVENT_TYPE.PAYMENT_FAIL
-            event.primary = True
-        else:
-            # Other billing_reasons should not happen.
-            event.note = f"Unrecognized invoice.payment_failed billing_reason: {data_object['billing_reason']}."
-        # TODO: Upgrading and downgrading subscriptions may generate a "subscription_update" billing reason.
-
-    # customer.subscription.updated
-    elif payload["type"] == "customer.subscription.updated":
-        prev = payload["data"]["previous_attributes"]
-        # Cancelation
-        if (
-            data_object["cancel_at_period_end"] is True
-            and prev.get("cancel_at_period_end") is False
-        ):
-            event.type = EVENT_TYPE.CANCEL_SUB
-            event.primary = True
-
-        # Reactivation
-        elif (
-            data_object["cancel_at_period_end"] is False
-            and prev.get("cancel_at_period_end") is True
-        ):
-            event.type = EVENT_TYPE.REACTIVATE_SUB
-            event.primary = True
-
-        # Renewal attempt (may ultimately fail or succeed)
-        elif set(prev.keys()) == {
-            "current_period_end",
-            "current_period_start",
-            "latest_invoice",
-        }:
-            event.type = EVENT_TYPE.RENEW_SUB
-            event.primary = False
-
-        # Subscription status changes are all non-primary events
-        # The statuses `incomplete_expired` and `canceled` should not appear since those would only
-        # come through the customer.subscription.deleted hook.
-        # And we don't currently use `trialing` or `unpaid`.
-
-        # Initial signup success: incomplete -> active
-        # Can also occur if there's an initial failure followed by a payment repair, but there's no good way to
-        # distinguish those here and it doesn't really matter anyway.
-        elif prev.get("status") == "incomplete" and data_object["status"] == "active":
-            event.type = EVENT_TYPE.NEW_SUB
-            event.primary = False
-
-        # Renewal failure
-        elif prev.get("status") == "active" and data_object["status"] == "past_due":
-            event.type = EVENT_TYPE.PAYMENT_FAIL
-            event.primary = False
-
-        # Payment method update where there's been no failure
-        elif prev.get("default_payment_method") and data_object["status"] == "active":
-            event.type = EVENT_TYPE.UPDATE_PAYMENT_METHOD
-            event.primary = True  # This doesn't do anything even though its primary.
-
-        # Payment method fix, i.e., where there's been a failure
-        elif prev.get("default_payment_method") and data_object["status"] in (
-            "incomplete",
-            "past_due",
-        ):
-            event.type = EVENT_TYPE.FIX_PAYMENT_METHOD
-            event.primary = True
-
-        # Payment fix success
-        elif prev.get("status") == "past_due" and data_object["status"] == "active":
-            event.type = EVENT_TYPE.FIX_PAYMENT_METHOD
-            event.primary = False
-
-        # An incomplete subscription was never fixed
-        elif data_object["status"] == "incomplete_expired":
-            event.type = EVENT_TYPE.NEW_SUB
-            event.primary = False
-
-        else:
-            event.note = f"Unrecognized customer.subscription.updated payload"
-
-    # customer.subscription.deleted
-    elif payload["type"] == "customer.subscription.deleted":
-        event.type = EVENT_TYPE.DELETE_SUB
-        event.primary = True
-
-    else:
-        raise RuntimeError(f"Unrecognized payload_type {event.payload_type}")
-
-    if event.type == EVENT_TYPE.UNKNOWN:
-        logger.error(
-            f"StripeEvent.id={event.id} StripeEvent.payload_type={event.payload_type} Could not calculate StripeEvent.type"
-        )
-
-    event.save()
-    return data_object
-
-
-def _preprocess_type_info(event, data_object):
-    info = {}
-
-    if event.payload_type.startswith("invoice."):
-        info["obj"] = "invoice"
-        info["customer_id"] = data_object["customer"]
-        info["subscription_id"] = data_object["subscription"]
-        info["billing_reason"] = data_object["billing_reason"]
-        info["price_id"] = data_object["lines"]["data"][0]["plan"]["id"]
-        info["period_end_ts"] = data_object["lines"]["data"][0]["period"]["end"]
-    elif event.payload_type.startswith("customer.subscription."):
-        info["obj"] = "subscription"
-        info["customer_id"] = data_object["customer"]
-        info["subscription_id"] = data_object["id"]
-        info["subscription_status"] = data_object["status"]
-        info["cancel_at_period_end"] = data_object["cancel_at_period_end"]
-
-    event.info = info
-    event.save()
-    return info
-
-
-def _preprocess_customer(event):
+def link_user_to_event(event, customer_id):
     """When an event comes in, try to match on the customer_id. If it can't, try to
     match on the email."""
 
-    try:
-        customer = models.Customer.objects.filter(
-            customer_id=event.info["customer_id"]
-        ).first()
-        if not customer:
-            # Couldn't find the user via customer_id, so try matching on email.
-            stripe_customer = stripe.Customer.retrieve(event.info["customer_id"])
-            customer = models.Customer.objects.get(user__email=stripe_customer.email)
+    customer = models.Customer.objects.filter(customer_id=customer_id).first()
+    if not customer:
+        # Couldn't find the user via customer_id, so try matching on email.
+        stripe_customer = stripe.Customer.retrieve(customer_id)
+        customer = models.Customer.objects.get(user__email=stripe_customer.email)
 
-        event.user = customer.user
-        event.save()
+    event.user = customer.user
+    event.save()
 
-        # Set customer_id if not already set.
-        if not customer.customer_id:
-            customer.customer_id = event.info["customer_id"]
-            customer.save()
+    # Set customer_id if not already set.
+    if not customer.customer_id:
+        customer.customer_id = customer_id
+        customer.save()
 
-        return customer
-
-    except models.Customer.DoesNotExist:
-        # If a user is being hard deleted, this will happen, so we need to be ok
-        # with a user not existing in that case.
-        if event.type == EVENT_TYPE.DELETE_SUB:
-            logger.warning(
-                f"StripeEvent.id={event.id} could not locate a user who may have been hard deleted."
-            )
-        else:
-            # Otherwise, it's a genuine error since we can't locate the user.
-            raise
-
-
-def _integrity_checks(event):
-    customer = event.user.customer
-
-    # The event's customer_id must match the one on the customer
-    if customer.customer_id != event.info["customer_id"]:
-        # This should never happen.
-        logger.error(
-            f"StripeEvent.id={event.id} User.id={customer.user.id} has a customer_id of {customer.customer_id} but the event customer_id is {event.info['customer_id']}."
-        )
-
-    # The event's subscription_id must match the one on the customer
-    # Only do this if it's non primary since a subscription mismatch can happen on an incomplete_expired.
-    if (
-        customer.subscription_id
-        and event.primary
-        and customer.subscription_id != event.info["subscription_id"]
-    ):
-        logger.error(
-            f"StripeEvent.id={event.id} User.id={customer.user.id} has a subscription_id of {customer.subscription_id} but the event subscription_id is {event.info['subscription_id']}."
-        )
+    return customer
 
 
 def process_stripe_event(event_id, verify_signature=True):
     """Handler for Stripe Events"""
     logger.info(f"StripeEvent.id={event_id} process_stripe_event task started")
     event = models.StripeEvent.objects.get(pk=event_id)
-    customer = None
     try:
         event.status = models.StripeEvent.Status.PENDING
         event.save()
@@ -234,80 +49,101 @@ def process_stripe_event(event_id, verify_signature=True):
         if verify_signature and settings.STRIPE_WH_SECRET:
             services.stripe_check_webhook_signature(event)
 
-        data_object = _preprocess_payload_type(event)
-        info = _preprocess_type_info(event, data_object)
-        customer = _preprocess_customer(event)
-        _integrity_checks(event)
+        payload = json.loads(event.body)
+        data_object = payload["data"]["object"]
 
-        # Non-primary events don't need any processing
-        if event.primary is False:
-            event.status = models.StripeEvent.Status.IGNORED
+        # If the payload_type is customer.subscription.*,
+        # create or update the appropriate StripeSubscription.
+        if event.payload_type.startswith("customer.subscription."):
+            # Extract the relevant attributes from the event payload
+            id = data_object["id"]
+            customer_id = data_object["customer"]
+            current_period_end = data_object["current_period_end"]
+            price_id = data_object["items"]["data"][0]["price"]["id"]
+            cancel_at_period_end = data_object["cancel_at_period_end"]
+            created = data_object["created"]
+            status = data_object["status"]
 
-        # Successful checkout session
-        elif event.type == EVENT_TYPE.NEW_SUB:
-            # Get the Plan the Customer signed up for.
-            price_id = info["price_id"]
-            plan = models.Plan.objects.get(price_id=price_id)
-            customer.subscription_id = info["subscription_id"]
-            customer.plan = plan
-
-            period_end_ts = info["period_end_ts"]
-            period_end = dt.fromtimestamp(period_end_ts, tz=timezone.utc)
-            customer.current_period_end = period_end
-            customer.payment_state = models.Customer.PaymentState.OK
-
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Renewal
-        elif event.type == EVENT_TYPE.RENEW_SUB:
-            period_end_ts = info["period_end_ts"]
-            period_end = dt.fromtimestamp(period_end_ts, tz=timezone.utc)
-            customer.current_period_end = period_end
-            customer.payment_state = models.Customer.PaymentState.OK
-
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Payment failure
-        elif event.type == EVENT_TYPE.PAYMENT_FAIL:
-            customer.payment_state = (
-                models.Customer.PaymentState.REQUIRES_PAYMENT_METHOD
-            )
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Payment method update where there's been no failure
-        elif event.type == EVENT_TYPE.UPDATE_PAYMENT_METHOD:
-            # This is a noop
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Payment method fix, i.e., where there's been a failure
-        elif event.type == EVENT_TYPE.FIX_PAYMENT_METHOD:
-            services.stripe_retry_latest_invoice(customer.customer_id)
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Cancelation
-        elif event.type == EVENT_TYPE.CANCEL_SUB:
-            customer.payment_state = models.Customer.PaymentState.OFF
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Reactivate a not-yet-canceled subscription
-        elif event.type == EVENT_TYPE.REACTIVATE_SUB:
-            customer.payment_state = models.Customer.PaymentState.OK
-            event.status = models.StripeEvent.Status.PROCESSED
-
-        # Deletion (final cancelation)
-        # Either past due or user canceled intentionally
-        elif event.type == EVENT_TYPE.DELETE_SUB:
-            if customer:
-                # It's possible there may be no Customer if the user was hard deleted.
-                # Downgrade to free_default.new
-                customer.payment_state = models.Customer.PaymentState.OFF
-                customer.plan = models.Plan.objects.get(
-                    type=models.Plan.Type.FREE_DEFAULT
+            # Create or update StripeSubscription
+            subscription = models.StripeSubscription.objects.filter(id=id).first()
+            if not subscription:
+                logger.info(
+                    f"StripeEvent.id={event_id} no StripeSubscription found, creating."
                 )
-                customer.current_period_end = None
-                customer.subscription_id = None
-            event.status = models.StripeEvent.Status.PROCESSED
+                subscription = models.StripeSubscription(id=id)
 
+            subscription.current_period_end = dt.fromtimestamp(
+                current_period_end, tz=timezone.utc
+            )
+            subscription.price_id = price_id
+            subscription.cancel_at_period_end = cancel_at_period_end
+            subscription.created = dt.fromtimestamp(created, tz=timezone.utc)
+            subscription.status = status
+            subscription.save()
+
+            # Link Customer/User to Event and StripeSubscription
+            try:
+                customer = link_user_to_event(event, customer_id)
+            except models.Customer.DoesNotExist:
+                # If a user is being hard deleted so the subscription is immediately canceled,
+                # this will happen, so we need to be ok with a user not existing in that case.
+                if subscription.status == "canceled":
+                    logger.warning(
+                        f"StripeEvent.id={event.id} could not locate a user who may have been hard deleted."
+                    )
+                    event.status = models.StripeEvent.Status.PROCESSED
+                    event.save()
+                    return
+                else:
+                    raise
+
+            if not subscription.customer:
+                logger.info(
+                    f"StripeEvent.id={event_id} no customer attached to StripeSubscription, attaching to {customer}."
+                )
+                subscription.customer = customer
+                subscription.save()
+            else:
+                # Integrity check: if the StripeSubscription already has a customer, it should match
+                # the incoming subscription update.
+                assert (
+                    subscription.customer == customer
+                ), "Integrity error: StripeSubscription Customer does not match incoming subscription update customer_id"
+
+            # Sync the Customer with the StripeSubscription.
+
+            # If a Customer somehow erroneously has multiple StripeSubscriptions,
+            # prefer the active one, followed by past_due. If there are still multiple,
+            # take the latest created one. That's what this equality check does because
+            # of how customer.subscription the property is defined.
+            logger.debug(
+                f"StripeEvent.id={event_id} comparing subscription.id={subscription.id} and customer.subscription.id={customer.subscription.id}"
+            )
+            if subscription.id == customer.subscription.id:
+                logger.debug(
+                    f"StripeEvent.id={event.id} syncing the subcription to customer"
+                )
+                subscription.sync_to_customer()
+                subscription.refresh_from_db()
+                customer.refresh_from_db()
+
+                # If payment method has changed and the subscription is paid_due, retry payment.
+                pm_change = (
+                    payload["data"]
+                    .get("previous_attributes", {})
+                    .get("default_payment_method")
+                )
+                if (
+                    subscription.status
+                    in (
+                        models.StripeSubscription.Status.INCOMPLETE,
+                        models.StripeSubscription.Status.PAST_DUE,
+                    )
+                    and pm_change
+                ):
+                    services.stripe_retry_latest_invoice(customer.customer_id)
+
+            event.status = models.StripeEvent.Status.PROCESSED
         else:
             event.status = models.StripeEvent.Status.IGNORED
     except Exception as e:
@@ -316,8 +152,6 @@ def process_stripe_event(event_id, verify_signature=True):
         event.note = traceback.format_exc()
     finally:
         logger.debug(f"StripeEvent.id={event.id} Saving StripeEvent")
-        if customer:
-            customer.save()
         event.save()
 
 

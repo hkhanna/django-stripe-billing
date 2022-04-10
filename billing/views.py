@@ -43,7 +43,9 @@ def stripe_webhook_view(request):
         headers=headers,
         status=models.StripeEvent.Status.NEW,
     )
-    logger.info(f"StripeEvent.id={event.id} StripeEvent.type={event.type} received")
+    logger.info(
+        f"StripeEvent.id={event.id} StripeEvent.payload_type={event.payload_type} received"
+    )
     if hasattr(tasks, "shared_task"):
         tasks.process_stripe_event.delay(event.id)
     else:
@@ -168,6 +170,7 @@ class CreatePortalView(LoginRequiredMixin, View):
         customer = request.user.customer
         if customer.state not in (
             "free_default.past_due.requires_payment_method",
+            "free_default.incomplete.requires_payment_method",
             "paid.past_due.requires_payment_method",
             "paid.paying",
             "paid.will_cancel",

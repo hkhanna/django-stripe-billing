@@ -12,18 +12,6 @@ User = get_user_model()
 fake = faker.Faker()  # This is to use faker without the factory_boy wrapper
 
 
-def set_customer_paying(customer):
-    """Takes a customer and flips the switches to make it paying"""
-    customer.customer_id = fake.pystr()
-    customer.plan = PlanFactory(paid=True)
-    customer.payment_state = models.Customer.PaymentState.OK
-    customer.current_period_end = fake.date_time_this_month(
-        before_now=False, after_now=True, tzinfo=timezone.utc
-    )
-    customer.subscription_id = fake.pystr()
-    customer.save()
-
-
 class LimitFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = models.Limit
@@ -63,6 +51,26 @@ class PlanLimitFactory(factory.django.DjangoModelFactory):
     value = factory.Faker("pyint", max_value=100)
 
 
+class StripeSubscriptionFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = models.StripeSubscription
+
+    id = factory.Faker("pystr")
+    customer = None  # This needs to be set.
+    current_period_end = factory.Faker(
+        "date_time_this_month", before_now=False, after_now=True, tzinfo=timezone.utc
+    )
+    price_id = factory.LazyFunction(lambda: PlanFactory(paid=True).price_id)
+    cancel_at_period_end = False
+    created = factory.LazyFunction(timezone.now)
+    status = models.StripeSubscription.Status.ACTIVE
+
+    @factory.post_generation
+    def dont_sync_to_customer(obj, create, extracted, **kwargs):
+        if not extracted:
+            obj.sync_to_customer()
+
+
 class UserFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = User
@@ -87,7 +95,9 @@ class UserFactory(factory.django.DjangoModelFactory):
             return
 
         if extracted:
-            set_customer_paying(obj.customer)
+            StripeSubscriptionFactory(customer=obj.customer)
+            obj.customer.customer_id = fake.pystr()
+            obj.customer.save()
 
     # If we pass in deep attributes to customer, this sets them properly.
     # Since it's defined after `paying`, it will overwrite that trait.

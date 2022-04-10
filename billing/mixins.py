@@ -31,6 +31,7 @@ class BillingMixin:
             return f"Subscription expired on {current_period_end}"
         elif customer.state in (
             "free_default.past_due.requires_payment_method",
+            "free_default.incomplete.requires_payment_method",
             "paid.past_due.requires_payment_method",
         ):
             return "There is a problem with your credit card. Please provide a new one or try again."
@@ -60,6 +61,7 @@ class BillingMixin:
             ctx["stripe_session_type"] = "checkout"
         elif state in (
             "free_default.past_due.requires_payment_method",
+            "free_default.incomplete.requires_payment_method",
             "paid.past_due.requires_payment_method",
             "paid.paying",
         ):

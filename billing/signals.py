@@ -9,6 +9,7 @@ CANCELABLE_STATES = (
     "paid.paying",
     "paid.will_cancel",
     "free_default.past_due.requires_payment_method",
+    "free_default.incomplete.requires_payment_method",
     "paid.past_due.requires_payment_method",
 )
 

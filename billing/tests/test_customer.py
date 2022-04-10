@@ -1,11 +1,12 @@
-"""Tests related to automatic Customer creation and model constraints. These are tests of type 1 and 2."""
+"""Tests related to automatic Customer creation and model constraints."""
 # A customer is automatically created if a user does not have one, and it accomplishes this via signals.
 # We also have some model constraints we want to test.
 
 import pytest
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.utils import timezone
 
 from .. import models, factories
 
@@ -74,7 +75,7 @@ def test_soft_delete_user_active_subscription(mock_stripe_subscription):
     user = factories.UserFactory(paying=True)
     user.save()
     assert mock_stripe_subscription.modify.called is False
-    assert models.Customer.PaymentState.OK == user.customer.payment_state
+    assert user.customer.subscription.status == models.StripeSubscription.Status.ACTIVE
 
     user.is_active = False
     user.save()
@@ -89,22 +90,161 @@ def test_delete_user_active_subscription(mock_stripe_subscription):
     assert 0 == models.Customer.objects.count()
 
 
-def test_customer_payment_state_constraint():
-    """If the payment_state is NOT set to off, there MUST be a subscription id."""
-    factories.UserFactory(
-        customer__subscription_id=None,
-        customer__payment_state=models.Customer.PaymentState.OFF,
-    )
-    factories.UserFactory(
-        customer__subscription_id=factories.id("sub"),
-        customer__payment_state=models.Customer.PaymentState.OFF,
-    )
-    factories.UserFactory(
-        customer__subscription_id=factories.id("sub"),
-        customer__payment_state=models.Customer.PaymentState.ERROR,
-    )
-    with pytest.raises(IntegrityError):
-        factories.UserFactory(
-            customer__subscription_id=None,
-            customer__payment_state=models.Customer.PaymentState.OK,
+def test_subscription_multiple():
+    """If a Customer has multiple StripeSubscriptions, prefer the active one."""
+    user = factories.UserFactory(paying=True)
+    customer = user.customer
+    factories.StripeSubscriptionFactory(customer=customer, status="incomplete")
+    customer.refresh_from_db()
+    assert customer.stripesubscription_set.count() == 2
+    assert customer.subscription.status == "active"
+
+
+def test_no_subscriptions(customer):
+    """If a Customer has no StripeSubscription, return None for Customer.subscription"""
+    customer.stripesubscription_set.all().delete()
+    customer.refresh_from_db()
+    assert customer.subscription is None
+
+
+def test_cancel_subscription_immediately(mock_stripe_subscription):
+    """Immediately canceling a subscription calls out to Stripe to cancel immediately."""
+    user = factories.UserFactory(paying=True)
+    customer = user.customer
+    customer.cancel_subscription(immediate=True)
+    assert mock_stripe_subscription.delete.called is True
+    assert (
+        customer.state == "paid.paying"
+    )  # No change to state until we receive the webhook.
+
+
+## -- Customer State Calculation Testing -- ##
+
+CUSTOMER_STATES = [
+    ["Never paid", models.Plan.Type.FREE_DEFAULT, None, None, None, "free_default.new"],
+    [
+        # N.B. This can happen if the payment fails after attachment. It also happens every time
+        # a new Subscription is created. It's a very first step and quickly overriden if payment succeeds.
+        # Because of that we are ignoring that blip since it's unlikely to affect anyone.
+        "Incomplete",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() + timedelta(days=30),
+        False,
+        "incomplete",
+        "free_default.incomplete.requires_payment_method",
+    ],
+    [
+        "Incomplete Expired",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() + timedelta(days=30),
+        False,
+        "incomplete_expired",
+        "free_default.new",
+    ],
+    [
+        "Active / Renewed / Reactivated",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() + timedelta(days=30),
+        False,
+        "active",
+        "paid.paying",
+    ],
+    [
+        "Payment failure",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() + timedelta(days=3),
+        False,
+        "past_due",
+        "paid.past_due.requires_payment_method",
+    ],
+    [
+        "Payment failure, plan expired but not yet canceled",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() - timedelta(days=1),
+        False,
+        "past_due",
+        "free_default.past_due.requires_payment_method",
+    ],
+    [
+        "Will cancel",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() + timedelta(days=10),
+        True,
+        "active",
+        "paid.will_cancel",
+    ],
+    [
+        "Missed final cancelation webhook",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now() - timedelta(days=1),
+        True,
+        "active",
+        "free_default.canceled.missed_webhook",
+    ],
+    [
+        "Canceled",
+        models.Plan.Type.PAID_PUBLIC,
+        timezone.now(),
+        True,  # This shouldn't matter. It's probably True if the user intentionally canceled, and False if it was payment failure.
+        "canceled",
+        "free_default.new",
+    ],
+    [
+        "Free Private Indefinite",
+        models.Plan.Type.FREE_PRIVATE,
+        None,
+        None,
+        None,
+        "free_private.indefinite",
+    ],
+    [
+        "Free Private Will Expire",
+        models.Plan.Type.FREE_PRIVATE,
+        timezone.now() + timedelta(days=100),
+        None,
+        None,
+        "free_private.will_expire",
+    ],
+    [
+        "Free Private Expired",
+        models.Plan.Type.FREE_PRIVATE,
+        timezone.now() - timedelta(days=1),
+        None,
+        None,
+        "free_private.expired",
+    ],
+]
+
+
+@pytest.mark.parametrize(
+    "name,plan_type,current_period_end,cancel_at_period_end,subscription_status,customer_state",
+    CUSTOMER_STATES,
+)
+def test_customer_state(
+    customer,
+    name,
+    plan_type,
+    current_period_end,
+    cancel_at_period_end,
+    subscription_status,
+    customer_state,
+):
+    factories.PlanFactory(paid=True)
+    factories.PlanFactory(type=models.Plan.Type.FREE_PRIVATE)
+    assert customer.state == "free_default.new"
+
+    plan = models.Plan.objects.filter(type=plan_type).first()
+    customer.plan = plan
+    customer.current_period_end = current_period_end
+    customer.save()
+
+    if subscription_status:
+        factories.StripeSubscriptionFactory(
+            customer=customer,
+            price_id=plan.price_id,
+            current_period_end=current_period_end,
+            cancel_at_period_end=cancel_at_period_end,
+            status=subscription_status,
         )
+
+    assert customer.state == customer_state
