@@ -253,8 +253,7 @@ class Customer(models.Model):
             return "free_private.expired"
 
         if (
-            self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
-            and self.subscription is not None
+            self.subscription is not None
             and self.subscription.status == StripeSubscription.Status.INCOMPLETE
         ):
             # There's a plan but it never got off the ground because the credit card

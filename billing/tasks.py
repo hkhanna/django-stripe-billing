@@ -115,8 +115,10 @@ def process_stripe_event(event_id, verify_signature=True):
                 subscription.sync_to_customer()
 
                 # If payment method has changed and the subscription is paid_due, retry payment.
-                pm_change = data_object.get("previous_attributes", {}).get(
-                    "default_payment_method"
+                pm_change = (
+                    payload["data"]
+                    .get("previous_attributes", {})
+                    .get("default_payment_method")
                 )
                 if (
                     subscription.status
