@@ -349,7 +349,7 @@ class StripeSubscription(models.Model):
     def sync_to_customer(self):
         """Synchronizes data on the StripeSubscription instance to the Customer instance,
         if and as appropriate."""
-        logger.info(
+        logger.debug(
             f"StripeSubscription.id={self.id} StripeSubscription.status={self.status} running sync_to_customer"
         )
 
@@ -358,10 +358,10 @@ class StripeSubscription(models.Model):
             plan = Plan.objects.get(price_id=self.price_id)
             self.customer.plan = plan
             self.customer.current_period_end = self.current_period_end
-            logger.info(
-                f"StripeSubscription.id={self.id} updated customer plan to {plan} and current_period_end to {self.current_period_end}"
-            )
             self.customer.save()
+            logger.debug(
+                f"StripeSubscription.id={self.id} updated customer {self.customer} plan to {self.customer.plan} and current_period_end to {self.customer.current_period_end}"
+            )
 
         # If the subscription is finally deleted, downgrade the customer to free_default and
         # zero-out the current_period_end.
