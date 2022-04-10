@@ -75,7 +75,7 @@ def test_soft_delete_user_active_subscription(mock_stripe_subscription):
     user = factories.UserFactory(paying=True)
     user.save()
     assert mock_stripe_subscription.modify.called is False
-    assert "ok" == user.customer.payment_state
+    assert user.customer.subscription.status == models.StripeSubscription.Status.ACTIVE
 
     user.is_active = False
     user.save()
@@ -101,11 +101,10 @@ def test_subscription_multiple():
 
 
 def test_no_subscriptions(customer):
-    """If a Customer has no StripeSubscription, return None for both Customer.subscription and Customer.subscription_id"""
+    """If a Customer has no StripeSubscription, return None for Customer.subscription"""
     customer.stripesubscription_set.all().delete()
     customer.refresh_from_db()
     assert customer.subscription is None
-    assert customer.subscription_id is None
 
 
 def test_cancel_subscription_immediately(mock_stripe_subscription):
@@ -180,14 +179,6 @@ CUSTOMER_STATES = [
         timezone.now() - timedelta(days=1),
         True,
         "active",
-        "free_default.canceled.missed_webhook",
-    ],
-    [
-        "Missed final cancelation webhook (past due)",
-        models.Plan.Type.PAID_PUBLIC,
-        timezone.now() - timedelta(days=1),
-        True,
-        "past_due",
         "free_default.canceled.missed_webhook",
     ],
     [

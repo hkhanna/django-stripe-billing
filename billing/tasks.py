@@ -118,7 +118,14 @@ def process_stripe_event(event_id, verify_signature=True):
                 pm_change = data_object.get("previous_attributes", {}).get(
                     "default_payment_method"
                 )
-                if subscription.status in ("incomplete", "past_due") and pm_change:
+                if (
+                    subscription.status
+                    in (
+                        models.StripeSubscription.Status.INCOMPLETE,
+                        models.StripeSubscription.Status.PAST_DUE,
+                    )
+                    and pm_change
+                ):
                     services.stripe_retry_latest_invoice(customer.customer_id)
 
             event.status = models.StripeEvent.Status.PROCESSED

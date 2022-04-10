@@ -137,25 +137,38 @@ class Customer(models.Model):
     current_period_end = models.DateTimeField(null=True, blank=True)
 
     def cancel_subscription(self, immediate):
-        if not immediate and self.payment_state == "off":
+        if not self.subscription:
             logger.error(
                 f"User.id={self.user.id} does not have an active subscription to cancel."
             )
             return False
 
         logger.info(
-            f"User.id={self.user.id} canceling subscription_id {self.subscription_id}"
+            f"User.id={self.user.id} canceling subscription_id {self.subscription.id}"
         )
         self.save()
-        return services.stripe_cancel_subscription(self.subscription_id, immediate)
+        return services.stripe_cancel_subscription(self.subscription.id, immediate)
 
     @property
     def subscription(self):
         """Get the Customer's StripeSubscription, if any, dealing with the situation of
         multiple subscriptions, which can happen erroneously or after a cancelation and renewal."""
+
+        # If the Customer isn't on a paid plan, pretend deleted subscriptions don't exist.
+        # We have to check if they're on a paid plan since a deleted subscription is still
+        # needed for sync_to_customer. But once the Customer is synced (and back on a free_default plan)
+        # is there, it's easiest to pretend the StripeSubscription just doesn't exist anymore.
+        subscriptions = self.stripesubscription_set.order_by("-created")
+        if self.plan.type not in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE):
+            subscriptions = subscriptions.exclude(
+                status__in=[
+                    StripeSubscription.Status.CANCELED,
+                    StripeSubscription.Status.INCOMPLETE_EXPIRED,
+                ]
+            )
+
         # We prefer an active subscription to a past_due subscription to every other subscription.
         # If there are still multiple subscriptions after that heuristic, we take the most recently created one.
-        subscriptions = self.stripesubscription_set.order_by("-created").all()
         for s in subscriptions:
             if s.status == "active":
                 return s
@@ -167,45 +180,24 @@ class Customer(models.Model):
         if len(subscriptions) > 0:
             return subscriptions[0]
 
-    # TODO: Refactor these properties into more sensible things (after tests pass)
-    @property
-    def subscription_id(self):
-        if self.subscription and self.subscription.status not in (
-            "canceled",
-            "incomplete_expired",
-        ):
-            return self.subscription.id
-
-    @property
-    def payment_state(self):
-        if not self.subscription:
-            return "off"
-        if self.subscription.cancel_at_period_end:
-            return "off"
-        if self.subscription.status == StripeSubscription.Status.ACTIVE:
-            return "ok"
-        if self.subscription.status == StripeSubscription.Status.PAST_DUE:
-            return "requires_payment_method"
-        return "off"
-
     @property
     def state(self):
         if (
             self.plan.type == Plan.Type.FREE_DEFAULT
-            and self.payment_state == "off"
             and self.current_period_end is None
-            and self.subscription_id is None
+            and self.subscription is None
         ):
             return "free_default.new"
 
         if (
             self.plan.type != Plan.Type.FREE_DEFAULT
-            and self.payment_state == "off"
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
-            and self.subscription_id is not None
+            and self.subscription is not None
+            and self.subscription.status == StripeSubscription.Status.ACTIVE
+            and self.subscription.cancel_at_period_end is True
         ):
-            # There's a paid or free private plan, but it's expired, and there's no more payments coming.
+            # There's a paid or free private plan, but it's expired, and it was expected to be canceled.
             # This will only happen if we miss the final cancelation webhook or reactivation webhook.
             # This will present as a canceled subscription.
             return "free_default.canceled.missed_webhook"
@@ -214,28 +206,29 @@ class Customer(models.Model):
             self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.current_period_end is not None
             and self.current_period_end > timezone.now()
-            and self.payment_state == "ok"
-            and self.subscription_id is not None
+            and self.subscription
+            and self.subscription.status == "active"
+            and self.subscription.cancel_at_period_end is False
         ):
-            # There's a paid plan, it's not expired, and there's payments coming.
+            # There's a paid plan, it's not expired, the subscription is active, and we don't intend to cancel it.
             return "paid.paying"
 
         if (
             self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
             and self.current_period_end is not None
             and self.current_period_end > timezone.now()
-            and self.payment_state == "off"
-            and self.subscription_id is not None
+            and self.subscription
+            and self.subscription.status == StripeSubscription.Status.ACTIVE
+            and self.subscription.cancel_at_period_end is True
         ):
-            # There's a paid plan, it's not expired, but there's no more payments coming.
+            # There's a paid plan, it's not expired, but the subscription will be canceled at the end of the period.
             # This Customer can be reactivated.
             return "paid.will_cancel"
 
         if (
             self.plan.type == Plan.Type.FREE_PRIVATE
             and self.current_period_end is None
-            and self.payment_state == "off"
-            and self.subscription_id is None
+            and self.subscription is None
         ):
             # Free private plan with no expiration date
             return "free_private.indefinite"
@@ -244,8 +237,7 @@ class Customer(models.Model):
             self.plan.type == Plan.Type.FREE_PRIVATE
             and self.current_period_end is not None
             and self.current_period_end > timezone.now()
-            and self.payment_state == "off"
-            and self.subscription_id is None
+            and self.subscription is None
         ):
             # Free private plan with an expiration date in the future.
             # An expiration date in the past yields free_private.expired.
@@ -255,18 +247,17 @@ class Customer(models.Model):
             self.plan.type == Plan.Type.FREE_PRIVATE
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
-            and self.payment_state == "off"
-            and self.subscription_id is None
+            and self.subscription is None
         ):
             # Free private plan with an expiration date in the past.
             return "free_private.expired"
 
         if (
             self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
-            and self.payment_state == "requires_payment_method"
             and self.current_period_end is not None
             and self.current_period_end < timezone.now()
-            and self.subscription_id is not None
+            and self.subscription is not None
+            and self.subscription.status == StripeSubscription.Status.PAST_DUE
         ):
             # There's a plan, but payment is required. The current_period_end is set in the past, which
             # means that Stripe is still retrying payment and its a past_due situation, but the application
@@ -275,10 +266,10 @@ class Customer(models.Model):
 
         if (
             self.plan.type in (Plan.Type.PAID_PUBLIC, Plan.Type.PAID_PRIVATE)
-            and self.payment_state == "requires_payment_method"
             and self.current_period_end is not None
             and self.current_period_end >= timezone.now()
-            and self.subscription_id is not None
+            and self.subscription is not None
+            and self.subscription.status == StripeSubscription.Status.PAST_DUE
         ):
             # There's a plan, but payment is required. The current_period_end is set in the future, which
             # means that Stripe is still retrying payment, and it is a past_due situation, but the paid plan
@@ -358,7 +349,10 @@ class StripeSubscription(models.Model):
 
         # If the subscription is finally deleted, downgrade the customer to free_default and
         # zero-out the current_period_end.
-        if self.status == StripeSubscription.Status.CANCELED:
+        if self.status in (
+            StripeSubscription.Status.CANCELED,
+            StripeSubscription.Status.INCOMPLETE_EXPIRED,
+        ):
             plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
             self.customer.plan = plan
             self.customer.current_period_end = None
