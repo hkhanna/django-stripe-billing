@@ -358,6 +358,10 @@ class StripeSubscription(models.Model):
             plan = Plan.objects.get(price_id=self.price_id)
             self.customer.plan = plan
             self.customer.current_period_end = self.current_period_end
+            logger.info(
+                f"StripeSubscription.id={self.id} updated customer plan to {plan} and current_period_end to {self.current_period_end}"
+            )
+            self.customer.save()
 
         # If the subscription is finally deleted, downgrade the customer to free_default and
         # zero-out the current_period_end.
@@ -368,8 +372,7 @@ class StripeSubscription(models.Model):
             plan = Plan.objects.get(type=Plan.Type.FREE_DEFAULT)
             self.customer.plan = plan
             self.customer.current_period_end = None
-
-        self.customer.save()
+            self.customer.save()
 
     def __str__(self):
         return self.id
