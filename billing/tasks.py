@@ -68,6 +68,9 @@ def process_stripe_event(event_id, verify_signature=True):
             # Create or update StripeSubscription
             subscription = models.StripeSubscription.objects.filter(id=id).first()
             if not subscription:
+                logger.info(
+                    f"StripeEvent.id={event_id} no StripeSubscription found, creating."
+                )
                 subscription = models.StripeSubscription(id=id)
 
             subscription.current_period_end = dt.fromtimestamp(
@@ -96,6 +99,9 @@ def process_stripe_event(event_id, verify_signature=True):
                     raise
 
             if not subscription.customer:
+                logger.info(
+                    f"StripeEvent.id={event_id} no customer attached to StripeSubscription, attaching to {customer}."
+                )
                 subscription.customer = customer
                 subscription.save()
             else:
@@ -111,7 +117,7 @@ def process_stripe_event(event_id, verify_signature=True):
             # prefer the active one, followed by past_due. If there are still multiple,
             # take the latest created one. That's what this equality check does because
             # of how customer.subscription the property is defined.
-            if subscription == customer.subscription:
+            if subscription.id == customer.subscription.id:
                 subscription.sync_to_customer()
 
                 # If payment method has changed and the subscription is paid_due, retry payment.
