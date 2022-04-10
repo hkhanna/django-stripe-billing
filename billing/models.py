@@ -349,6 +349,9 @@ class StripeSubscription(models.Model):
     def sync_to_customer(self):
         """Synchronizes data on the StripeSubscription instance to the Customer instance,
         if and as appropriate."""
+        logger.info(
+            f"StripeSubscription.id={self.id} StripeSubscription.status={self.status} running sync_to_customer"
+        )
 
         # Sync the plan and end date if the subscription is active.
         if self.status == StripeSubscription.Status.ACTIVE:
