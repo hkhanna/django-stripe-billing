@@ -117,9 +117,9 @@ def process_stripe_event(event_id, verify_signature=True):
             # take the latest created one. That's what this equality check does because
             # of how customer.subscription the property is defined.
             logger.debug(
-                f"StripeEvent.id={event_id} comparing subscription.id={subscription.id} and customer.subscription.id={customer.subscription.id}"
+                f"StripeEvent.id={event_id} comparing subscription.id={subscription} and customer.subscription.id={customer.subscription}"
             )
-            if subscription.id == customer.subscription.id:
+            if subscription == customer.subscription:
                 logger.debug(
                     f"StripeEvent.id={event.id} syncing the subcription to customer"
                 )

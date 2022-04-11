@@ -28,16 +28,18 @@ def subscription_event(customer, paid_plan):
     """Return a function that generates a Stripe Event payload with defaults of an active paid subscription."""
 
     def inner(**kwargs):
+        _customer = kwargs.pop("customer", customer)
         type = kwargs.pop("type", "customer.subscription.updated")
-        id = kwargs.pop("id", customer.subscription.id)
-        customer_id = kwargs.pop("customer_id", customer.customer_id)
-        current_period_end = kwargs.pop(
-            "current_period_end", customer.current_period_end.timestamp()
-        )
+        id = kwargs.pop("id", _customer.subscription.id)
+        customer_id = kwargs.pop("customer_id", _customer.customer_id)
         price_id = kwargs.pop("price_id", paid_plan.price_id)
         cancel_at_period_end = kwargs.pop("cancel_at_period_end", False)
         created = kwargs.pop("created", timezone.now().timestamp())
         status = kwargs.pop("status", "active")
+
+        current_period_end = kwargs.pop("current_period_end", None)
+        if not current_period_end:
+            current_period_end = _customer.current_period_end.timestamp()
 
         payload = {
             "id": "evt_test",
@@ -271,3 +273,26 @@ def test_payment_update_and_retry(
     assert event.user.customer == customer
     assert mock_stripe_invoice.list.call_count == 1
     assert mock_stripe_invoice.pay.call_count == 1
+
+
+def test_incomplete_expired_cycle(client, user, subscription_event):
+    """A StripeSubscription that transitions from incomplete to incomplete_expired should not error."""
+    # This is a bugfix that results from ignoring deleted subscriptions when the customer is not on a
+    # paid plan. Customers are, of course, not normally on paid plans when their status is incomplete.
+    url = reverse("billing:stripe_webhook")
+
+    customer = user.customer
+    factories.StripeSubscriptionFactory(
+        customer=customer, status=models.StripeSubscription.Status.INCOMPLETE
+    )
+
+    payload = subscription_event(
+        customer=customer,
+        status=models.StripeSubscription.Status.INCOMPLETE_EXPIRED,
+        current_period_end=(timezone.now() + timedelta(days=30)).timestamp(),
+    )["payload"]
+
+    response = client.post(url, payload, content_type="application/json")
+    assert response.status_code == 201
+    event = models.StripeEvent.objects.first()
+    assert event.status == models.StripeEvent.Status.PROCESSED
