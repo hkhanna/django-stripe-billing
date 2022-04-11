@@ -59,6 +59,7 @@ class StripeEventAdmin(admin.ModelAdmin):
     search_fields = ["user__email", "payload_type", "type"]
     ordering = ["-received_at"]
     actions = ["replay_event"]
+    readonly_fields = ["received_at"]
 
     @admin.display(description="User")
     def user_link(self, obj):
