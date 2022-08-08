@@ -42,6 +42,7 @@ class PlanLimitInline(admin.TabularInline):
 @admin.register(models.Plan)
 class PlanAdmin(admin.ModelAdmin):
     inlines = [PlanLimitInline]
+    list_display = ["__str__", "type", "display_price"]
 
 
 @admin.register(models.StripeEvent)
@@ -120,4 +121,10 @@ class StripeEventAdminInline(admin.TabularInline):
 @admin.register(models.StripeSubscription)
 class StripeSubscriptionAdmin(admin.ModelAdmin):
     ordering = ("-created",)
-    list_display = ["id", "customer", "status"]
+    list_display = [
+        "id",
+        "customer",
+        "status",
+        "cancel_at_period_end",
+        "current_period_end",
+    ]
