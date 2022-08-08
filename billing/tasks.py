@@ -64,6 +64,22 @@ def process_stripe_event(event_id, verify_signature=True):
             created = data_object["created"]
             status = data_object["status"]
 
+            # Link Customer/User to Event
+            try:
+                customer = link_user_to_event(event, customer_id)
+            except models.Customer.DoesNotExist:
+                # If a user is being hard deleted so the subscription is immediately canceled,
+                # this will happen, so we need to be ok with a user not existing in that case.
+                if status == "canceled":
+                    logger.warning(
+                        f"StripeEvent.id={event.id} could not locate a user who may have been hard deleted."
+                    )
+                    event.status = models.StripeEvent.Status.PROCESSED
+                    event.save()
+                    return
+                else:
+                    raise
+
             # Create or update StripeSubscription
             subscription = models.StripeSubscription.objects.filter(id=id).first()
             if not subscription:
@@ -81,22 +97,7 @@ def process_stripe_event(event_id, verify_signature=True):
             subscription.status = status
             subscription.save()
 
-            # Link Customer/User to Event and StripeSubscription
-            try:
-                customer = link_user_to_event(event, customer_id)
-            except models.Customer.DoesNotExist:
-                # If a user is being hard deleted so the subscription is immediately canceled,
-                # this will happen, so we need to be ok with a user not existing in that case.
-                if subscription.status == "canceled":
-                    logger.warning(
-                        f"StripeEvent.id={event.id} could not locate a user who may have been hard deleted."
-                    )
-                    event.status = models.StripeEvent.Status.PROCESSED
-                    event.save()
-                    return
-                else:
-                    raise
-
+            # Link Customer/User to StripeSubscription
             if not subscription.customer:
                 logger.info(
                     f"StripeEvent.id={event_id} no customer attached to StripeSubscription, attaching to {customer}."
