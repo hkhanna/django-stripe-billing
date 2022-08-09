@@ -1,5 +1,7 @@
 import json
 import logging
+from datetime import datetime as dt
+from django.utils import timezone
 from urllib.parse import urlparse
 from django.views.generic import View
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -27,7 +29,12 @@ def stripe_webhook_view(request):
     except json.decoder.JSONDecodeError as e:
         return JsonResponse({"detail": "Invalid payload"}, status=400)
 
-    if type(payload) != dict or "type" not in payload or "id" not in payload:
+    if (
+        type(payload) != dict
+        or "type" not in payload
+        or "id" not in payload
+        or "created" not in payload
+    ):
         return JsonResponse({"detail": "Invalid payload"}, status=400)
 
     headers = {}
@@ -39,6 +46,7 @@ def stripe_webhook_view(request):
     event = models.StripeEvent.objects.create(
         event_id=payload["id"],
         payload_type=payload["type"],
+        created=dt.fromtimestamp(payload["created"], tz=timezone.utc),
         body=request.body.decode("utf-8"),
         headers=headers,
         status=models.StripeEvent.Status.NEW,

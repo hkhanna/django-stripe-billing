@@ -80,6 +80,22 @@ def process_stripe_event(event_id, verify_signature=True):
                 else:
                     raise
 
+            # Ensure this Event is the latest one, i.e., Events haven't
+            # arrived out of order.
+            if (
+                models.StripeEvent.objects.filter(
+                    user=customer.user, created__gte=event.created
+                )
+                .exclude(pk=event_id)
+                .exists()
+            ):
+                logger.warning(
+                    f"StripeEvent.id={event.id} processed out of order. Ignoring."
+                )
+                event.status = models.StripeEvent.Status.IGNORED
+                event.save()
+                return
+
             # Create or update StripeSubscription
             subscription = models.StripeSubscription.objects.filter(id=id).first()
             if not subscription:

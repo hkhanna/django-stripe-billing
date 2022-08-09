@@ -400,6 +400,11 @@ class StripeEvent(models.Model):
     # body can't be a JSONField since Stripe webhook signature checking will fail
     body = models.TextField()
     headers = models.JSONField()
+    created = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="The timestamp of the creation of the Event on Stripe's side.",
+    )
     note = models.TextField(blank=True)
 
     class Status(models.TextChoices):

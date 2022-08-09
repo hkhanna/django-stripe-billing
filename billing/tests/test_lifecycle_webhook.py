@@ -45,6 +45,7 @@ def subscription_event(customer, paid_plan):
             "id": "evt_test",
             "object": "event",
             "type": type,
+            "created": created,
             "data": {
                 "object": {
                     "id": id,
@@ -68,7 +69,12 @@ def subscription_event(customer, paid_plan):
 def test_create_event(client):
     """Create event"""
     url = reverse("billing:stripe_webhook")
-    payload = {"id": "evt_test", "object": "event", "type": "test"}
+    payload = {
+        "id": "evt_test",
+        "object": "event",
+        "type": "test",
+        "created": timezone.now().timestamp(),
+    }
     response = client.post(url, payload, content_type="application/json")
     assert response.status_code == 201
     assert 1 == models.StripeEvent.objects.count()
@@ -90,6 +96,7 @@ def test_unrecognized_type(client):
         "id": "evt_test",
         "object": "event",
         "type": "bad.type",
+        "created": timezone.now().timestamp(),
         "data": {"object": None},
     }
     response = client.post(url, payload, content_type="application/json")
@@ -296,3 +303,49 @@ def test_incomplete_expired_cycle(client, user, subscription_event):
     assert response.status_code == 201
     event = models.StripeEvent.objects.first()
     assert event.status == models.StripeEvent.Status.PROCESSED
+
+
+def test_misordered_event(client, user, mock_stripe_customer, subscription_event):
+    """A StripeEvent associated with a User that is received
+    with a created time before another StripeEvent associated with that User
+    is ignored."""
+    # Trying to deal with the case where subscription.created appears after
+    # subscription.updated and the Customer gets locked into an incomplete state.
+    url = reverse("billing:stripe_webhook")
+
+    customer = user.customer
+    customer.customer_id = None
+    customer.save()
+
+    now = timezone.now().timestamp()
+    mock_stripe_customer.retrieve.return_value.email = user.email
+
+    payload1 = subscription_event(
+        id="sub_new",
+        customer_id="cus_new",
+        type="customer.subscription.updated",
+        status=models.StripeSubscription.Status.ACTIVE,
+        current_period_end=(timezone.now() + timedelta(days=30)).timestamp(),
+        created=now + 1,  # Out of order from payload2
+    )["payload"]
+
+    payload2 = subscription_event(
+        id="sub_new",
+        customer_id="cus_new",
+        type="customer.subscription.created",
+        status=models.StripeSubscription.Status.INCOMPLETE,
+        current_period_end=(timezone.now() + timedelta(days=30)).timestamp(),
+        created=now,
+    )["payload"]
+
+    response = client.post(url, payload1, content_type="application/json")
+    assert response.status_code == 201
+    response = client.post(url, payload2, content_type="application/json")
+    assert response.status_code == 201
+
+    events = models.StripeEvent.objects.all()
+    assert events[0].status == models.StripeEvent.Status.PROCESSED
+    assert events[1].status == models.StripeEvent.Status.IGNORED
+    customer.refresh_from_db()
+    assert customer.customer_id == "cus_new"
+    assert customer.state == "paid.paying"
