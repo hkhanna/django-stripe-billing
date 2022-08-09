@@ -86,15 +86,22 @@ class StripeEventAdmin(admin.ModelAdmin):
                 payload_type=payload["type"],
                 headers=obj.headers,
                 body=obj.body,
+                created=obj.created,
                 status=models.StripeEvent.Status.NEW,
                 note=f"Replay of event pk {obj.id}",
             )
             if hasattr(tasks, "shared_task"):
                 tasks.process_stripe_event.apply(
-                    kwargs={"event_id": event.id, "verify_signature": False}
+                    kwargs={
+                        "event_id": event.id,
+                        "verify_signature": False,
+                        "check_created": False,
+                    }
                 )
             else:
-                tasks.process_stripe_event(event.id, verify_signature=False)
+                tasks.process_stripe_event(
+                    event.id, verify_signature=False, check_created=False
+                )
 
             self.message_user(request, f"Event  {obj.id} replayed successfully.")
 

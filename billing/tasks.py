@@ -38,7 +38,7 @@ def link_user_to_event(event, customer_id):
     return customer
 
 
-def process_stripe_event(event_id, verify_signature=True):
+def process_stripe_event(event_id, verify_signature=True, check_created=True):
     """Handler for Stripe Events"""
     logger.info(f"StripeEvent.id={event_id} process_stripe_event task started")
     event = models.StripeEvent.objects.get(pk=event_id)
@@ -82,7 +82,7 @@ def process_stripe_event(event_id, verify_signature=True):
 
             # Ensure this Event is the latest one, i.e., Events haven't
             # arrived out of order.
-            if (
+            if check_created and (
                 models.StripeEvent.objects.filter(
                     user=customer.user, created__gte=event.created
                 )

@@ -1,3 +1,7 @@
+Unreleased
+---------------------
+- Fix bug in event replay.
+
 0.5.1
 ---------------------
 - Ignore Stripe Events that are processed out of order. This avoids an issue where Stripe sends an old Subscription state after a newer one, clobbering the correct state.
