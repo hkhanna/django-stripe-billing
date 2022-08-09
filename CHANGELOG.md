@@ -1,3 +1,9 @@
+0.5.1
+---------------------
+- Ignore Stripe Events that are processed out of order. This avoids an issue where Stripe sends an old Subscription state after a newer one, clobbering the correct state.
+- Admin improvements
+- Add long description for Pypi
+
 0.5.0
 ----------------------
 - Automatically retry failed invoices when a customer updates their subscription payment method.
